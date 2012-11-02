@@ -38,14 +38,14 @@
 //     
 // Note:
 //
-// - The unit of item sizes is not defined; whatever it is, once the sum
-//   exceeds the maximum cache size, elements start getting purged until it
-//   drops below the threshold again.
+// * The unit of item sizes is not defined; whatever it is, once the sum
+// exceeds the maximum cache size, elements start getting purged until it
+// drops below the threshold again.
 //
-// - The integers are passed by value. Caching pointers is, of course, Okay,
-//   but be careful not to cache a memory location that holds two different
-//   values at different points in time; updating the value of a pointer after
-//   caching it will change the cached value.
+// * The integers are passed by value. Caching pointers is, of course, Okay,
+// but be careful not to cache a memory location that holds two different
+// values at different points in time; updating the value of a pointer after
+// caching it will change the cached value.
 //
 // Now start storing values:
 //
