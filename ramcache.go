@@ -61,7 +61,6 @@
 //     Purging 764
 //     Purging 765
 //
-
 package ramcache
 
 type Cache struct {
