@@ -1,4 +1,4 @@
 Explanation for usage of this library can be extracted from the source using
-godoc.
+godoc: <http://go.pkgdoc.org/github.com/hraban/ramcache>.
 
 The licensing terms are described in the file LICENSE.
