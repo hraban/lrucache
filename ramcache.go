@@ -69,11 +69,11 @@ type Cache struct {
 	// (roughly) all cached items are going to be (roughly) the same size it
 	// makes sense to return 1 from Size() and set MaxSize to the maximum number
 	// of elements you want to allow in cache.
-	MaxSize          int64
-	size             int64
-	entries          map[string]*cacheEntry
-	setChan          chan cacheEntry
-	getChan          chan readReq
+	MaxSize int64
+	size    int64
+	entries map[string]*cacheEntry
+	// Cache operations are pushed down this channel to the main cache loop
+	opChan           chan operation
 	lruHead, lruTail *cacheEntry
 }
 
@@ -106,16 +106,29 @@ type Cacheable interface {
 	OnPurge(deleted bool)
 }
 
+// Requests that are passed to the cache managing goroutine
+type operation interface{}
+
+type reqSet struct {
+	id      string
+	payload Cacheable
+}
+
+type reqGet struct {
+	id string
+	// Cache goroutine pushes result down this channel (if any) and closes it
+	reply chan Cacheable
+}
+
+type reqDelete struct {
+	id string
+}
+
 type cacheEntry struct {
 	payload Cacheable
 	id      string
 	// Pointers for LRU cache
 	prev, next *cacheEntry
-}
-
-type readReq struct {
-	id    string
-	reply chan Cacheable
 }
 
 // Purge the least recently used from the cache
@@ -143,7 +156,8 @@ func trimCache(c *Cache) {
 }
 
 // Not safe for use in concurrent goroutines
-func directSet(c *Cache, e cacheEntry) {
+func directSet(c *Cache, id string, p Cacheable) {
+	e := cacheEntry{payload: p, id: id}
 	if len(c.entries) == 0 {
 		c.lruTail = &e
 		c.lruHead = &e
@@ -155,7 +169,7 @@ func directSet(c *Cache, e cacheEntry) {
 		c.lruHead = &e
 	}
 	c.size += e.payload.Size()
-	c.entries[e.id] = &e
+	c.entries[id] = &e
 	trimCache(c)
 	return
 }
@@ -176,26 +190,24 @@ func directGet(c *Cache, id string) (Cacheable, bool) {
 
 func (c *Cache) Init(maxsize int64) {
 	c.MaxSize = maxsize
-	c.setChan = make(chan cacheEntry)
-	c.getChan = make(chan readReq)
+	c.opChan = make(chan operation)
 	c.entries = map[string]*cacheEntry{}
 	go func() {
-		for {
-			select {
-			case e := <-c.setChan:
-				if e.payload == nil {
-					delete(c.entries, e.id)
-				} else {
-					directSet(c, e)
-				}
-				break
-			case req := <-c.getChan:
+		for op := range c.opChan {
+			switch req := op.(type) {
+			case reqSet:
+				directSet(c, req.id, req.payload)
+			case reqDelete:
+				// BIG TODO: Also delete from lru dll!
+				delete(c.entries, req.id)
+			case reqGet:
 				p, ok := directGet(c, req.id)
 				if ok {
 					req.reply <- p
 				}
 				close(req.reply)
-				break
+			default:
+				panic("Illegal cache operation")
 			}
 		}
 	}()
@@ -207,19 +219,19 @@ func (c *Cache) Set(id string, p Cacheable) {
 	if p == nil {
 		panic("Cacheable value must not be nil")
 	}
-	c.setChan <- cacheEntry{payload: p, id: id}
+	c.opChan <- reqSet{payload: p, id: id}
 	return
 }
 
 func (c *Cache) Get(id string) (Cacheable, bool) {
-	req := readReq{id: id, reply: make(chan Cacheable)}
-	c.getChan <- req
+	req := reqGet{id: id, reply: make(chan Cacheable)}
+	c.opChan <- req
 	e, ok := <-req.reply
 	return e, ok
 }
 
 func (c *Cache) Delete(id string) {
-	c.setChan <- cacheEntry{payload: nil, id: id}
+	c.opChan <- reqDelete{id: id}
 }
 
 // Create and initialize a new cache, ready for use.
