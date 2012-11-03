@@ -192,17 +192,23 @@ func directDelete(c *Cache, id string) {
 }
 
 // Not safe for use in concurrent goroutines
-func directGet(c *Cache, id string) (Cacheable, bool) {
+func directGet(c *Cache, id string) (p Cacheable, ok bool) {
 	e, ok := c.entries[id]
-	if ok && e.next != nil {
-		if e.prev != nil {
-			e.prev.next = e.next
-		}
-		e.next.prev = e.prev
-		e.prev = c.lruTail
-		c.lruTail = e
+	if !ok {
+		return
 	}
-	return e.payload, ok
+	p = e.payload
+	if e.next == nil {
+		return
+	}
+	// Put element at the start of the LRU list
+	if e.prev != nil {
+		e.prev.next = e.next
+	}
+	e.next.prev = e.prev
+	e.prev = c.lruHead
+	c.lruHead = e
+	return
 }
 
 func (c *Cache) Init(maxsize int64) {
