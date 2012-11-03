@@ -131,19 +131,26 @@ type cacheEntry struct {
 	prev, next *cacheEntry
 }
 
+func removeEntry(c *Cache, e *cacheEntry) {
+	delete(c.entries, e.id)
+	if e.prev == nil {
+		c.lruTail = e.next
+	} else {
+		e.prev.next = e.next
+	}
+	if e.next == nil {
+		c.lruHead = e.prev
+	} else {
+		e.next.prev = e.prev
+	}
+	c.size -= e.payload.Size()
+	return
+}
+
 // Purge the least recently used from the cache
 func purgeLRU(c *Cache) {
 	c.lruTail.payload.OnPurge(false)
-	c.size -= c.lruTail.payload.Size()
-	delete(c.entries, c.lruTail.id)
-	c.lruTail = c.lruTail.next
-	if c.lruTail == nil {
-		// Not something you would expect to happen. This happens when the head
-		// item alone is larger than the entire cache.
-		c.lruHead = nil
-	} else {
-		c.lruTail.prev = nil
-	}
+	removeEntry(c, c.lruTail)
 	return
 }
 
@@ -177,19 +184,9 @@ func directSet(c *Cache, id string, p Cacheable) {
 // Not safe for use in concurrent goroutines
 func directDelete(c *Cache, id string) {
 	e, ok := c.entries[id]
-	if !ok {
-		return
-	}
-	delete(c.entries, id)
-	if e.prev == nil {
-		c.lruTail = e.next
-	} else {
-		e.prev.next = e.next
-	}
-	if e.next == nil {
-		c.lruHead = e.prev
-	} else {
-		e.next.prev = e.prev
+	if ok {
+		e.payload.OnPurge(true)
+		removeEntry(c, e)
 	}
 	return
 }
