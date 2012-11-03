@@ -175,6 +175,26 @@ func directSet(c *Cache, id string, p Cacheable) {
 }
 
 // Not safe for use in concurrent goroutines
+func directDelete(c *Cache, id string) {
+	e, ok := c.entries[id]
+	if !ok {
+		return
+	}
+	delete(c.entries, id)
+	if e.prev == nil {
+		c.lruTail = e.next
+	} else {
+		e.prev.next = e.next
+	}
+	if e.next == nil {
+		c.lruHead = e.prev
+	} else {
+		e.next.prev = e.prev
+	}
+	return
+}
+
+// Not safe for use in concurrent goroutines
 func directGet(c *Cache, id string) (Cacheable, bool) {
 	e, ok := c.entries[id]
 	if ok && e.next != nil {
@@ -198,8 +218,7 @@ func (c *Cache) Init(maxsize int64) {
 			case reqSet:
 				directSet(c, req.id, req.payload)
 			case reqDelete:
-				// BIG TODO: Also delete from lru dll!
-				delete(c.entries, req.id)
+				directDelete(c, req.id)
 			case reqGet:
 				p, ok := directGet(c, req.id)
 				if ok {
