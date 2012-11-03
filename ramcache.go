@@ -274,3 +274,8 @@ func Set(id string, c Cacheable) {
 	sharedCache.Set(id, c)
 	return
 }
+
+func Delete(id string) {
+	sharedCache.Delete(id)
+	return
+}
