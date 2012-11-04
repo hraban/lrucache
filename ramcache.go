@@ -204,6 +204,8 @@ func directGet(c *Cache, id string) (p Cacheable, ok bool) {
 	// Put element at the start of the LRU list
 	if e.prev != nil {
 		e.prev.next = e.next
+	} else {
+		c.lruTail = e.next
 	}
 	e.next.prev = e.prev
 	e.prev = c.lruHead
