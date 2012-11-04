@@ -18,11 +18,11 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 // IN THE SOFTWARE.
 
-// RAMcache, a light-weight LRU based memory cache library for Go.
+// Light-weight in-memory LRU (object) cache library for Go.
 //
 // To use this library, first create a cache:
 //
-//      c := ramcache.New(1234)
+//      c := lrucache.New(1234)
 //
 // Now define a type that implements the Cacheable interface:
 //
@@ -61,7 +61,7 @@
 //     Purging 764
 //     Purging 765
 //
-package ramcache
+package lrucache
 
 type Cache struct {
 	// Feel free to change this whenever. The units are not bytes but just
