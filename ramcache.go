@@ -94,6 +94,8 @@ type Cacheable interface {
 	// - This item was explicitly deleted using Cache.Delete(id) (deleted =
 	//   true)
 	//
+	// - A new element with the same key is stored (deleted = false)
+	//
 	// For most types of cached elements, this can just be a NOP. A real
 	// example is a session cache where sessions are not stored in a database
 	// until they are purged from the memory cache. As long as the memory cache
@@ -164,6 +166,11 @@ func trimCache(c *Cache) {
 
 // Not safe for use in concurrent goroutines
 func directSet(c *Cache, id string, p Cacheable) {
+	// Overwrite old entry
+	if old, ok := c.entries[id]; ok {
+		old.payload.OnPurge(false)
+		removeEntry(c, old)
+	}
 	e := cacheEntry{payload: p, id: id}
 	if len(c.entries) == 0 {
 		c.lruTail = &e
