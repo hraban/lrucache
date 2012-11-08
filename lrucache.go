@@ -134,6 +134,9 @@ type reqDelete struct {
 	id string
 }
 
+// Used only for testing
+type reqPing chan (bool)
+
 type cacheEntry struct {
 	payload Cacheable
 	id      string
@@ -249,6 +252,8 @@ func (c *Cache) Init(maxsize int64) {
 				directDelete(c, req)
 			case reqGet:
 				directGet(c, req)
+			case reqPing:
+				req <- true
 			default:
 				panic("Illegal cache operation")
 			}

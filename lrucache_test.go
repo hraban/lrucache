@@ -3,7 +3,6 @@ package lrucache
 import (
 	"strconv"
 	"testing"
-	"time"
 )
 
 type varsize int
@@ -26,13 +25,19 @@ func (x *purgeable) OnPurge(d bool) {
 	x.how = d
 }
 
+// Wait until a cache has processed all its operations
+func sync(c *Cache) {
+	ch := make(chan bool)
+	c.opChan <- reqPing(ch)
+	<-ch
+}
+
 func Test_OnPurge_1(t *testing.T) {
 	c := New(1)
 	var x, y purgeable
 	c.Set("x", &x)
 	c.Set("y", &y)
-	// Wait for changes to propagate
-	time.Sleep(1 * time.Millisecond)
+	sync(c)
 	if !x.purged {
 		t.Error("Element was not purged from full cache")
 	}
@@ -46,7 +51,7 @@ func Test_OnPurge_2(t *testing.T) {
 	var x purgeable
 	c.Set("x", &x)
 	c.Delete("x")
-	time.Sleep(1 * time.Millisecond)
+	sync(c)
 	if !x.purged {
 		t.Error("Element was not deleted from cache")
 	}
@@ -62,6 +67,7 @@ func Test_safeOnPurge(t *testing.T) {
 	j := varsize(1)
 	c.Set("i", i)
 	c.Set("j", j)
+	sync(c)
 }
 
 func Test_Size(t *testing.T) {
@@ -70,7 +76,7 @@ func Test_Size(t *testing.T) {
 	for i := 1; i < 15; i++ {
 		c.Set(strconv.Itoa(i), varsize(i))
 	}
-	time.Sleep(1 * time.Millisecond)
+	sync(c)
 	// At this point, expect {0, 1, 2, 3} to be purged
 	if c.Size() != 99 {
 		t.Errorf("Unexpected size: %d", c.Size())
