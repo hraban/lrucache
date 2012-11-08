@@ -131,4 +131,7 @@ func Test_OnMiss(t *testing.T) {
 			t.Errorf("Illegal cache value: expected %d, got %d", i, j)
 		}
 	}
+	for k := range misses {
+		t.Errorf("Expected %s to miss", k)
+	}
 }
