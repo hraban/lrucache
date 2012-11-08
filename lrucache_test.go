@@ -1,6 +1,7 @@
 package lrucache
 
 import (
+	"strconv"
 	"testing"
 	"time"
 )
@@ -61,4 +62,27 @@ func Test_safeOnPurge(t *testing.T) {
 	j := varsize(1)
 	c.Set("i", i)
 	c.Set("j", j)
+}
+
+func Test_Size(t *testing.T) {
+	c := New(100)
+	// sum(0..14) = 105
+	for i := 1; i < 15; i++ {
+		c.Set(strconv.Itoa(i), varsize(i))
+	}
+	time.Sleep(1 * time.Millisecond)
+	// At this point, expect {0, 1, 2, 3} to be purged
+	if c.Size() != 99 {
+		t.Errorf("Unexpected size: %d", c.Size())
+	}
+	for i := 0; i < 4; i++ {
+		if _, ok := c.Get(strconv.Itoa(i)); ok {
+			t.Errorf("Expected %d to be purged", i)
+		}
+	}
+	for i := 4; i < 15; i++ {
+		if _, ok := c.Get(strconv.Itoa(i)); !ok {
+			t.Errorf("Expected %d to be cached", i)
+		}
+	}
 }
