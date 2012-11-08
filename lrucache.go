@@ -83,6 +83,10 @@ type Cache struct {
 type Cacheable interface {
 	// See Cache.MaxSize for an explanation
 	Size() int64
+}
+
+type NotifyPurge interface {
+	Cacheable
 	// Called once when the element is purged from cache. The deleted boolean
 	// indicates whether this call was the result of a call to Cache.Delete to
 	// explicitly delete this item.  Possible reasons for this method to get
@@ -133,6 +137,14 @@ type cacheEntry struct {
 	prev, next *cacheEntry
 }
 
+// Only call c.OnPurge() if c implements NotifyPurge.
+func safeOnPurge(c Cacheable, deleted bool) {
+	if t, ok := c.(NotifyPurge); ok {
+		t.OnPurge(deleted)
+	}
+	return
+}
+
 func removeEntry(c *Cache, e *cacheEntry) {
 	delete(c.entries, e.id)
 	if e.prev == nil {
@@ -151,7 +163,7 @@ func removeEntry(c *Cache, e *cacheEntry) {
 
 // Purge the least recently used from the cache
 func purgeLRU(c *Cache) {
-	c.lruTail.payload.OnPurge(false)
+	safeOnPurge(c.lruTail.payload, false)
 	removeEntry(c, c.lruTail)
 	return
 }
@@ -168,7 +180,7 @@ func trimCache(c *Cache) {
 func directSet(c *Cache, req reqSet) {
 	// Overwrite old entry
 	if old, ok := c.entries[req.id]; ok {
-		old.payload.OnPurge(false)
+		safeOnPurge(old.payload, false)
 		removeEntry(c, old)
 	}
 	e := cacheEntry{payload: req.payload, id: req.id}
@@ -192,7 +204,7 @@ func directSet(c *Cache, req reqSet) {
 func directDelete(c *Cache, req reqDelete) {
 	e, ok := c.entries[req.id]
 	if ok {
-		e.payload.OnPurge(true)
+		safeOnPurge(e.payload, true)
 		removeEntry(c, e)
 	}
 	return
