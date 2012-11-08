@@ -77,6 +77,10 @@ type Cache struct {
 	lruHead, lruTail *cacheEntry
 }
 
+func (c *Cache) Size() int64 {
+	return c.size
+}
+
 // Anything that implements this interface can be stored in a cache. Two
 // different types can share the same cache, all that matters is that they
 // implement this interface.
