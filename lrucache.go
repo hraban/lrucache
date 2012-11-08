@@ -75,6 +75,8 @@ type Cache struct {
 	// Cache operations are pushed down this channel to the main cache loop
 	opChan           chan operation
 	lruHead, lruTail *cacheEntry
+	// If not nil, invoked for every cache miss.
+	onMiss func(string) Cacheable
 }
 
 func (c *Cache) Size() int64 {
@@ -136,6 +138,8 @@ type reqDelete struct {
 
 // Used only for testing
 type reqPing chan (bool)
+
+type reqOnMissFunc func(string) Cacheable
 
 type cacheEntry struct {
 	payload Cacheable
@@ -222,6 +226,16 @@ func directGet(c *Cache, req reqGet) {
 	e, ok := c.entries[req.id]
 	if ok {
 		req.reply <- e.payload
+	} else {
+		if c.onMiss != nil {
+			p := c.onMiss(req.id)
+			if p != nil {
+				req.reply <- p
+				close(req.reply)
+				directSet(c, reqSet{req.id, p})
+				return
+			}
+		}
 	}
 	close(req.reply)
 	if !ok || e.next == nil {
@@ -254,6 +268,8 @@ func (c *Cache) Init(maxsize int64) {
 				directGet(c, req)
 			case reqPing:
 				req <- true
+			case reqOnMissFunc:
+				c.onMiss = req
 			default:
 				panic("Illegal cache operation")
 			}
@@ -280,6 +296,12 @@ func (c *Cache) Get(id string) (Cacheable, bool) {
 
 func (c *Cache) Delete(id string) {
 	c.opChan <- reqDelete{id: id}
+}
+
+// Used to populate the cache if an entry is not found. If result is not nil,
+// it is stored in cache and returned from Get. Call with f is nil to clear.
+func (c *Cache) OnMiss(f func(string) Cacheable) {
+	c.opChan <- reqOnMissFunc(f)
 }
 
 // Create and initialize a new cache, ready for use.
