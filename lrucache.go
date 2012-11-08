@@ -24,7 +24,7 @@
 //
 //      c := lrucache.New(1234)
 //
-// Now define a type that implements the Cacheable interface:
+// Then define a type that implements the Cacheable interface:
 //
 //      type cacheableInt int
 //      
@@ -35,19 +35,8 @@
 //      func (i cacheableInt) Size() int64 {
 //          return 1
 //      }
-//     
-// Note:
 //
-// * The unit of item sizes is not defined; whatever it is, once the sum
-// exceeds the maximum cache size, elements start getting purged until it
-// drops below the threshold again.
-//
-// * The integers are passed by value. Caching pointers is, of course, Okay,
-// but be careful not to cache a memory location that holds two different
-// values at different points in time; updating the value of a pointer after
-// caching it will change the cached value.
-//
-// Now start storing values:
+// Finally:
 //
 //     for i := 0; i < 2000; i++ {
 //         c.Set(strconv.Itoa(i), cacheableInt(i))
@@ -60,6 +49,17 @@
 //     ...
 //     Purging 764
 //     Purging 765
+//
+// Note:
+//
+// * The unit of item sizes is not defined; whatever it is, once the sum
+// exceeds the maximum cache size, elements start getting purged until it
+// drops below the threshold again.
+//
+// * The integers are passed by value. Caching pointers is, of course, Okay,
+// but be careful when caching a memory location that holds two different
+// values at different points in time; updating the value of a pointer after
+// caching it will change the cached value.
 //
 package lrucache
 
@@ -88,13 +88,13 @@ type Cacheable interface {
 	// explicitly delete this item.  Possible reasons for this method to get
 	// called:
 	//
-	// - Cache is growing too large and this is the least used item (deleted =
-	//   false)
+	// * Cache is growing too large and this is the least used item (deleted =
+	// false)
 	//
-	// - This item was explicitly deleted using Cache.Delete(id) (deleted =
-	//   true)
+	// * This item was explicitly deleted using Cache.Delete(id) (deleted =
+	// true)
 	//
-	// - A new element with the same key is stored (deleted = false)
+	// * A new element with the same key is stored (deleted = false)
 	//
 	// For most types of cached elements, this can just be a NOP. A real
 	// example is a session cache where sessions are not stored in a database
