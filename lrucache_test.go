@@ -5,6 +5,12 @@ import (
 	"testing"
 )
 
+type flatsize int
+
+func (i flatsize) Size() int64 {
+	return 1
+}
+
 type varsize int
 
 func (i varsize) Size() int64 {
@@ -89,6 +95,40 @@ func Test_Size(t *testing.T) {
 	for i := 4; i < 15; i++ {
 		if _, ok := c.Get(strconv.Itoa(i)); !ok {
 			t.Errorf("Expected %d to be cached", i)
+		}
+	}
+}
+
+func Test_OnMiss(t *testing.T) {
+	c := New(10)
+	// Expected cache misses (arbitrary value)
+	misses := map[string]int{}
+	for i := 5; i < 10; i++ {
+		misses[strconv.Itoa(i)] = 0
+	}
+	c.OnMiss(func(id string) Cacheable {
+		if _, ok := misses[id]; !ok {
+			t.Errorf("Unexpected cache miss for %q", id)
+		} else {
+			delete(misses, id)
+		}
+		i, err := strconv.Atoi(id)
+		if err != nil {
+			t.Fatalf("Illegal id: %q", id)
+		}
+		return flatsize(flatsize(i))
+	})
+	for i := 0; i < 5; i++ {
+		c.Set(strconv.Itoa(i), flatsize(i))
+	}
+	for i := 0; i < 10; i++ {
+		x, ok := c.Get(strconv.Itoa(i))
+		if !ok {
+			t.Errorf("Unexpected not-found Get for %d", i)
+			continue
+		}
+		if j := x.(flatsize); int(j) != i {
+			t.Errorf("Illegal cache value: expected %d, got %d", i, j)
 		}
 	}
 }
