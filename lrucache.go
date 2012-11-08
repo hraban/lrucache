@@ -64,12 +64,7 @@
 package lrucache
 
 type Cache struct {
-	// Feel free to change this whenever. The units are not bytes but just
-	// whatever unit it is that your cache entries return from Size(). If
-	// (roughly) all cached items are going to be (roughly) the same size it
-	// makes sense to return 1 from Size() and set MaxSize to the maximum number
-	// of elements you want to allow in cache.
-	MaxSize int64
+	maxSize int64
 	size    int64
 	entries map[string]*cacheEntry
 	// Cache operations are pushed down this channel to the main cache loop
@@ -79,15 +74,11 @@ type Cache struct {
 	onMiss func(string) Cacheable
 }
 
-func (c *Cache) Size() int64 {
-	return c.size
-}
-
 // Anything that implements this interface can be stored in a cache. Two
 // different types can share the same cache, all that matters is that they
 // implement this interface.
 type Cacheable interface {
-	// See Cache.MaxSize for an explanation
+	// See Cache.MaxSize() for an explanation
 	Size() int64
 }
 
@@ -139,6 +130,10 @@ type reqPing chan (bool)
 
 type reqOnMissFunc func(string) Cacheable
 
+type reqMaxSize int64
+
+type reqGetSize chan<- int64
+
 type cacheEntry struct {
 	payload Cacheable
 	id      string
@@ -179,7 +174,7 @@ func purgeLRU(c *Cache) {
 
 // Trim the cache until its size <= max size
 func trimCache(c *Cache) {
-	for c.size > c.MaxSize {
+	for c.size > c.maxSize {
 		purgeLRU(c)
 	}
 	return
@@ -253,7 +248,7 @@ func directGet(c *Cache, req reqGet) {
 }
 
 func (c *Cache) Init(maxsize int64) {
-	c.MaxSize = maxsize
+	c.maxSize = maxsize
 	c.opChan = make(chan operation)
 	c.entries = map[string]*cacheEntry{}
 	go func() {
@@ -269,6 +264,12 @@ func (c *Cache) Init(maxsize int64) {
 				req <- true
 			case reqOnMissFunc:
 				c.onMiss = req
+			case reqMaxSize:
+				c.maxSize = int64(req)
+				trimCache(c)
+			case reqGetSize:
+				req <- c.size
+				close(req)
 			default:
 				panic("Illegal cache operation")
 			}
@@ -301,6 +302,21 @@ func (c *Cache) Delete(id string) {
 // it is stored in cache and returned from Get. Call with f is nil to clear.
 func (c *Cache) OnMiss(f func(string) Cacheable) {
 	c.opChan <- reqOnMissFunc(f)
+}
+
+// Feel free to change this whenever. The units are not bytes but just whatever
+// unit it is that your cache entries return from Size(). If (roughly) all
+// cached items are going to be (roughly) the same size it makes sense to
+// return 1 from Size() and set maxSize to the maximum number of elements you
+// want to allow in cache.
+func (c *Cache) MaxSize(i int64) {
+	c.opChan <- reqMaxSize(i)
+}
+
+func (c *Cache) Size() int64 {
+	reply := make(chan int64)
+	c.opChan <- reqGetSize(reply)
+	return <-reply
 }
 
 // Create and initialize a new cache, ready for use.
