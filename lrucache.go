@@ -132,9 +132,7 @@ type reqGet struct {
 	reply chan Cacheable
 }
 
-type reqDelete struct {
-	id string
-}
+type reqDelete string
 
 // Used only for testing
 type reqPing chan (bool)
@@ -213,7 +211,8 @@ func directSet(c *Cache, req reqSet) {
 
 // Not safe for use in concurrent goroutines
 func directDelete(c *Cache, req reqDelete) {
-	e, ok := c.entries[req.id]
+	id := string(req)
+	e, ok := c.entries[id]
 	if ok {
 		safeOnPurge(e.payload, true)
 		removeEntry(c, e)
@@ -295,7 +294,7 @@ func (c *Cache) Get(id string) (Cacheable, bool) {
 }
 
 func (c *Cache) Delete(id string) {
-	c.opChan <- reqDelete{id: id}
+	c.opChan <- reqDelete(id)
 }
 
 // Used to populate the cache if an entry is not found. If result is not nil,
