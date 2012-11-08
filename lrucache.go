@@ -165,13 +165,13 @@ func trimCache(c *Cache) {
 }
 
 // Not safe for use in concurrent goroutines
-func directSet(c *Cache, id string, p Cacheable) {
+func directSet(c *Cache, req reqSet) {
 	// Overwrite old entry
-	if old, ok := c.entries[id]; ok {
+	if old, ok := c.entries[req.id]; ok {
 		old.payload.OnPurge(false)
 		removeEntry(c, old)
 	}
-	e := cacheEntry{payload: p, id: id}
+	e := cacheEntry{payload: req.payload, id: req.id}
 	if len(c.entries) == 0 {
 		c.lruTail = &e
 		c.lruHead = &e
@@ -183,14 +183,14 @@ func directSet(c *Cache, id string, p Cacheable) {
 		c.lruHead = &e
 	}
 	c.size += e.payload.Size()
-	c.entries[id] = &e
+	c.entries[req.id] = &e
 	trimCache(c)
 	return
 }
 
 // Not safe for use in concurrent goroutines
-func directDelete(c *Cache, id string) {
-	e, ok := c.entries[id]
+func directDelete(c *Cache, req reqDelete) {
+	e, ok := c.entries[req.id]
 	if ok {
 		e.payload.OnPurge(true)
 		removeEntry(c, e)
@@ -199,13 +199,13 @@ func directDelete(c *Cache, id string) {
 }
 
 // Not safe for use in concurrent goroutines
-func directGet(c *Cache, id string) (p Cacheable, ok bool) {
-	e, ok := c.entries[id]
-	if !ok {
-		return
+func directGet(c *Cache, req reqGet) {
+	e, ok := c.entries[req.id]
+	if ok {
+		req.reply <- e.payload
 	}
-	p = e.payload
-	if e.next == nil {
+	close(req.reply)
+	if !ok || e.next == nil {
 		return
 	}
 	// Put element at the start of the LRU list
@@ -228,15 +228,11 @@ func (c *Cache) Init(maxsize int64) {
 		for op := range c.opChan {
 			switch req := op.(type) {
 			case reqSet:
-				directSet(c, req.id, req.payload)
+				directSet(c, req)
 			case reqDelete:
-				directDelete(c, req.id)
+				directDelete(c, req)
 			case reqGet:
-				p, ok := directGet(c, req.id)
-				if ok {
-					req.reply <- p
-				}
-				close(req.reply)
+				directGet(c, req)
 			default:
 				panic("Illegal cache operation")
 			}
