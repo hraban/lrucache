@@ -38,7 +38,7 @@ func sync(c *Cache) {
 	<-ch
 }
 
-func Test_OnPurge_1(t *testing.T) {
+func TestOnPurge_1(t *testing.T) {
 	c := New(1)
 	var x, y purgeable
 	c.Set("x", &x)
@@ -52,7 +52,7 @@ func Test_OnPurge_1(t *testing.T) {
 	}
 }
 
-func Test_OnPurge_2(t *testing.T) {
+func TestOnPurge_2(t *testing.T) {
 	c := New(1)
 	var x purgeable
 	c.Set("x", &x)
@@ -67,7 +67,7 @@ func Test_OnPurge_2(t *testing.T) {
 }
 
 // Just test filling a cache with a type that does not implement NotifyPurge
-func Test_safeOnPurge(t *testing.T) {
+func TestsafeOnPurge(t *testing.T) {
 	c := New(1)
 	i := varsize(1)
 	j := varsize(1)
@@ -76,7 +76,7 @@ func Test_safeOnPurge(t *testing.T) {
 	sync(c)
 }
 
-func Test_Size(t *testing.T) {
+func TestSize(t *testing.T) {
 	c := New(100)
 	// sum(0..14) = 105
 	for i := 1; i < 15; i++ {
@@ -99,7 +99,7 @@ func Test_Size(t *testing.T) {
 	}
 }
 
-func Test_OnMiss(t *testing.T) {
+func TestOnMiss(t *testing.T) {
 	c := New(10)
 	// Expected cache misses (arbitrary value)
 	misses := map[string]int{}
