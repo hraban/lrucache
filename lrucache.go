@@ -215,22 +215,29 @@ func directDelete(c *Cache, req reqDelete) {
 	return
 }
 
+// Handle a cache miss from outside the main goroutine
+func handleCacheMiss(c *Cache, req reqGet) {
+	if c.onMiss != nil {
+		p := c.onMiss(req.id)
+		if p != nil {
+			// Push new value back into cache (normally, thus safely)
+			c.Set(req.id, p)
+			// After that is done, this Get is finally complete
+			req.reply <- p
+		}
+	}
+	close(req.reply)
+	return
+}
+
 // Not safe for use in concurrent goroutines
 func directGet(c *Cache, req reqGet) {
 	e, ok := c.entries[req.id]
-	if ok {
-		req.reply <- e.payload
-	} else {
-		if c.onMiss != nil {
-			p := c.onMiss(req.id)
-			if p != nil {
-				req.reply <- p
-				close(req.reply)
-				directSet(c, reqSet{req.id, p})
-				return
-			}
-		}
+	if !ok {
+		go handleCacheMiss(c, req)
+		return
 	}
+	req.reply <- e.payload
 	close(req.reply)
 	if !ok || e.next == nil {
 		return
