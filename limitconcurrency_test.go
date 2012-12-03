@@ -1,6 +1,7 @@
 package lrucache
 
 import (
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -33,5 +34,39 @@ func TestNoConcurrentDupes(t *testing.T) {
 	count := rawcounter() - 1
 	if count != 1 {
 		t.Errorf("Function called too often (%d times)", count)
+	}
+}
+
+func maxInt32(x, y int32) int32 {
+	if x < y {
+		return y
+	}
+	return x
+}
+
+func TestThrottleConcurrency(t *testing.T) {
+	var i, max int32
+	const limit = 3
+	var wg sync.WaitGroup
+	unsafef := func(x string) Cacheable {
+		newi := atomic.AddInt32(&i, 1)
+		oldmax := atomic.LoadInt32(&max)
+		newmax := maxInt32(oldmax, newi)
+		for !atomic.CompareAndSwapInt32(&max, oldmax, newmax) {
+			oldmax = atomic.LoadInt32(&max)
+		}
+		time.Sleep(1 * time.Millisecond)
+		wg.Done()
+		atomic.AddInt32(&i, -1)
+		return nil
+	}
+	safef := ThrottleConcurrency(unsafef, limit)
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go safef("foo")
+	}
+	wg.Wait()
+	if max > limit {
+		t.Errorf("Too many concurrent calls detected (%d > %d)", max, limit)
 	}
 }
