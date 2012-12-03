@@ -135,3 +135,29 @@ func TestOnMiss(t *testing.T) {
 		t.Errorf("Expected %s to miss", k)
 	}
 }
+
+func TestConcurrentOnMiss(t *testing.T) {
+	c := New(10)
+	ch := make(chan flatsize)
+	// If key foo is requested but not cached, read it from the channel
+	c.OnMiss(func(id string) Cacheable {
+		if id == "foo" {
+			// Indicate that we want a value
+			ch <- flatsize(0)
+			return <-ch
+		}
+		return nil
+	})
+	go func() {
+		c.Get("foo")
+	}()
+	<-ch
+	// Now we know for sure: a goroutine is blocking on c.Get("foo").
+	// But other cache operations should be unaffected:
+	c.Set("bar", flatsize(10))
+	// Unlock that poor blocked goroutine
+	ch <- flatsize(10)
+	if result, ok := c.Get("foo"); !ok || result != flatsize(10) {
+		t.Errorf("Expected 10, got: %d", result)
+	}
+}
