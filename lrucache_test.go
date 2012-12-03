@@ -1,6 +1,7 @@
 package lrucache
 
 import (
+	"runtime"
 	"strconv"
 	"testing"
 )
@@ -144,6 +145,11 @@ func TestConcurrentOnMiss(t *testing.T) {
 		if id == "foo" {
 			// Indicate that we want a value
 			ch <- flatsize(0)
+			// To be perfectly honest: I do not understand why this scheduler
+			// call is necessary. Channel operations are not enough, here? If
+			// this Gosched() is left out, a deadlock occurs. Why? What is the
+			// idiomatic way to do this?
+			runtime.Gosched()
 			return <-ch
 		}
 		return nil
