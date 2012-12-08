@@ -167,3 +167,21 @@ func TestConcurrentOnMiss(t *testing.T) {
 		t.Errorf("Expected 10, got: %d", result)
 	}
 }
+
+func TestZeroSize(t *testing.T) {
+	c := New(2)
+	c.Set("a", varsize(0))
+	c.Set("b", varsize(1))
+	c.Set("c", varsize(2))
+	if _, ok := c.Get("a"); !ok {
+		t.Error("Purged element with size=0; should have left in cache")
+	}
+	c.Delete("a")
+	c.Set("d", varsize(2))
+	if _, ok := c.Get("c"); ok {
+		t.Error("Kept `c' around for too long after removing empty element")
+	}
+	if _, ok := c.Get("d"); !ok {
+		t.Error("Failed to cache `d' after removing empty element")
+	}
+}

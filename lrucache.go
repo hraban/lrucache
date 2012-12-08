@@ -188,7 +188,12 @@ func directSet(c *Cache, req reqSet) {
 		removeEntry(c, old)
 	}
 	e := cacheEntry{payload: req.payload, id: req.id}
-	if len(c.entries) == 0 {
+	c.entries[req.id] = &e
+	size := e.payload.Size()
+	if size == 0 {
+		return
+	}
+	if c.lruTail == nil {
 		c.lruTail = &e
 		c.lruHead = &e
 		e.next = nil
@@ -198,8 +203,7 @@ func directSet(c *Cache, req reqSet) {
 		e.prev = c.lruHead
 		c.lruHead = &e
 	}
-	c.size += e.payload.Size()
-	c.entries[req.id] = &e
+	c.size += size
 	trimCache(c)
 	return
 }
@@ -210,7 +214,9 @@ func directDelete(c *Cache, req reqDelete) {
 	e, ok := c.entries[id]
 	if ok {
 		safeOnPurge(e.payload, true)
-		removeEntry(c, e)
+		if e.payload.Size() != 0 {
+			removeEntry(c, e)
+		}
 	}
 	return
 }
@@ -239,7 +245,7 @@ func directGet(c *Cache, req reqGet) {
 	}
 	req.reply <- e.payload
 	close(req.reply)
-	if !ok || e.next == nil {
+	if e.next == nil {
 		return
 	}
 	// Put element at the start of the LRU list
