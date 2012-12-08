@@ -32,11 +32,8 @@ func (x *purgeable) OnPurge(d bool) {
 	x.how = d
 }
 
-// Wait until a cache has processed all its operations
-func syncChan(c *Cache) {
-	ch := make(chan bool)
-	c.opChan <- reqPing(ch)
-	<-ch
+func syncCache(c *Cache) {
+	c.Get("imblueifIweregreenIwoulddie")
 }
 
 func TestOnPurge_1(t *testing.T) {
@@ -44,7 +41,7 @@ func TestOnPurge_1(t *testing.T) {
 	var x, y purgeable
 	c.Set("x", &x)
 	c.Set("y", &y)
-	syncChan(c)
+	syncCache(c)
 	if !x.purged {
 		t.Error("Element was not purged from full cache")
 	}
@@ -58,7 +55,7 @@ func TestOnPurge_2(t *testing.T) {
 	var x purgeable
 	c.Set("x", &x)
 	c.Delete("x")
-	syncChan(c)
+	syncCache(c)
 	if !x.purged {
 		t.Error("Element was not deleted from cache")
 	}
@@ -74,7 +71,7 @@ func TestsafeOnPurge(t *testing.T) {
 	j := varsize(1)
 	c.Set("i", i)
 	c.Set("j", j)
-	syncChan(c)
+	syncCache(c)
 }
 
 func TestSize(t *testing.T) {
@@ -83,7 +80,7 @@ func TestSize(t *testing.T) {
 	for i := 1; i < 15; i++ {
 		c.Set(strconv.Itoa(i), varsize(i))
 	}
-	syncChan(c)
+	syncCache(c)
 	// At this point, expect {0, 1, 2, 3} to be purged
 	if c.Size() != 99 {
 		t.Errorf("Unexpected size: %d", c.Size())

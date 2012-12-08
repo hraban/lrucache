@@ -125,9 +125,6 @@ type reqGet struct {
 
 type reqDelete string
 
-// Used only for testing
-type reqPing chan (bool)
-
 type reqOnMissFunc func(string) Cacheable
 
 type reqMaxSize int64
@@ -273,8 +270,6 @@ func (c *Cache) Init(maxsize int64) {
 				directDelete(c, req)
 			case reqGet:
 				directGet(c, req)
-			case reqPing:
-				req <- true
 			case reqOnMissFunc:
 				c.onMiss = req
 			case reqMaxSize:
