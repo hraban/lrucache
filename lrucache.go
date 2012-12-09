@@ -28,7 +28,7 @@
 //
 //      type cacheableInt int
 //      
-//      func (i cacheableInt) OnPurge(deleted bool) {
+//      func (i cacheableInt) OnPurge(why PurgeReason) {
 //          fmt.Printf("Purging %d\n", i)
 //      }
 //      
@@ -74,39 +74,44 @@ type Cache struct {
 	onMiss func(string) Cacheable
 }
 
-// Anything that implements this interface can be stored in a cache. Two
-// different types can share the same cache, all that matters is that they
-// implement this interface.
+// Required interface for cached objects
 type Cacheable interface {
-	// See Cache.MaxSize() for an explanation
+	// See Cache.MaxSize() for an explanation of the semantics. Please report a
+	// constant size; the cache does not expect objects to change size while
+	// they are cached. Items are trusted to report their own size accurately.
 	Size() int64
 }
 
+// Reasons for a cached element to be deleted from the cache
+type PurgeReason int
+
+const (
+	// Cache is growing too large and this is the least used item
+	CACHEFULL PurgeReason = iota
+	// This item was explicitly deleted using Cache.Delete(id)
+	EXPLICITDELETE
+	// A new element with the same key is stored (usually indicates an update)
+	KEYCOLLISION
+)
+
+// Optional interface for cached objects
 type NotifyPurge interface {
 	Cacheable
-	// Called once when the element is purged from cache. The deleted boolean
-	// indicates whether this call was the result of a call to Cache.Delete to
-	// explicitly delete this item.  Possible reasons for this method to get
-	// called:
+	// Called once when the element is purged from cache. The argument
+	// indicates why.
 	//
-	// * Cache is growing too large and this is the least used item (deleted =
-	// false)
-	//
-	// * This item was explicitly deleted using Cache.Delete(id) (deleted =
-	// true)
-	//
-	// * A new element with the same key is stored (deleted = false)
-	//
-	// For most types of cached elements, this can just be a NOP. A real
-	// example is a session cache where sessions are not stored in a database
-	// until they are purged from the memory cache. As long as the memory cache
-	// is large enough to hold all of them, they expire before the cache grows
-	// too large and no database connection is ever needed. This OnPurge
-	// implementation would store items to a database iff deleted == false.
+	// Example use-case: a session cache where sessions are not stored in a
+	// database until they are purged from the memory cache. As long as the
+	// memory cache is large enough to hold all of them, they expire before the
+	// cache grows too large and no database connection is ever needed. This
+	// OnPurge implementation would store items to a database iff reason ==
+	// CACHEFULL.
 	//
 	// Called from within a private goroutine, but never called concurrently
-	// with other elements' OnPurge().
-	OnPurge(deleted bool)
+	// with other elements' OnPurge(). The entire cache is blocked until this
+	// function returns. By all means, feel free to launch a fresh goroutine
+	// and return immediately.
+	OnPurge(why PurgeReason)
 }
 
 // Requests that are passed to the cache managing goroutine
@@ -139,9 +144,9 @@ type cacheEntry struct {
 }
 
 // Only call c.OnPurge() if c implements NotifyPurge.
-func safeOnPurge(c Cacheable, deleted bool) {
+func safeOnPurge(c Cacheable, why PurgeReason) {
 	if t, ok := c.(NotifyPurge); ok {
-		t.OnPurge(deleted)
+		t.OnPurge(why)
 	}
 	return
 }
@@ -164,7 +169,7 @@ func removeEntry(c *Cache, e *cacheEntry) {
 
 // Purge the least recently used from the cache
 func purgeLRU(c *Cache) {
-	safeOnPurge(c.lruTail.payload, false)
+	safeOnPurge(c.lruTail.payload, CACHEFULL)
 	removeEntry(c, c.lruTail)
 	return
 }
@@ -181,7 +186,7 @@ func trimCache(c *Cache) {
 func directSet(c *Cache, req reqSet) {
 	// Overwrite old entry
 	if old, ok := c.entries[req.id]; ok {
-		safeOnPurge(old.payload, false)
+		safeOnPurge(old.payload, KEYCOLLISION)
 		removeEntry(c, old)
 	}
 	e := cacheEntry{payload: req.payload, id: req.id}
@@ -210,7 +215,7 @@ func directDelete(c *Cache, req reqDelete) {
 	id := string(req)
 	e, ok := c.entries[id]
 	if ok {
-		safeOnPurge(e.payload, true)
+		safeOnPurge(e.payload, EXPLICITDELETE)
 		if e.payload.Size() != 0 {
 			removeEntry(c, e)
 		}
