@@ -406,7 +406,7 @@ func Delete(id string) {
 
 // A shared cache is available immediately for all users of this library. By
 // default, there is no size limit. Use this function to change that.
-func MaxSharedSize(size int64) {
+func MaxSize(size int64) {
 	sharedCache.MaxSize(size)
 }
 
