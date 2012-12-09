@@ -59,6 +59,10 @@
 //
 package lrucache
 
+import (
+	"errors"
+)
+
 type Cache struct {
 	maxSize int64
 	size    int64
@@ -67,7 +71,7 @@ type Cache struct {
 	opChan           chan operation
 	lruHead, lruTail *cacheEntry
 	// If not nil, invoked for every cache miss.
-	onMiss func(string) Cacheable
+	onMiss func(string) (Cacheable, error)
 }
 
 // Anything can be cached!
@@ -130,13 +134,17 @@ type reqSet struct {
 
 type reqGet struct {
 	id string
-	// Cache goroutine pushes result down this channel (if any) and closes it
+	// If the key is found the value is pushed down this channel after which it
+	// is closed immediately. If the value is not found, OnMiss is called. If
+	// that results in an error, nil is pushed down the channel, followed by
+	// the error, after which it is closed. If that does not work (OnMiss is
+	// not defined, or it returns nil) the channel is closed immediately.
 	reply chan Cacheable
 }
 
 type reqDelete string
 
-type reqOnMissFunc func(string) Cacheable
+type reqOnMissFunc func(string) (Cacheable, error)
 
 type reqMaxSize int64
 
@@ -232,12 +240,20 @@ func directDelete(c *Cache, req reqDelete) {
 // Handle a cache miss from outside the main goroutine
 func handleCacheMiss(c *Cache, req reqGet) {
 	if c.onMiss != nil {
-		p := c.onMiss(req.id)
-		if p != nil {
+		p, err := c.onMiss(req.id)
+		switch {
+		case err != nil:
+			req.reply <- nil
+			req.reply <- err
+			break
+		case p == nil:
+			break
+		default:
 			// Push new value back into cache (normally, thus safely)
 			c.Set(req.id, p)
 			// After that is done, this Get is finally complete
 			req.reply <- p
+			break
 		}
 	}
 	close(req.reply)
@@ -306,11 +322,19 @@ func (c *Cache) Set(id string, p Cacheable) {
 	return
 }
 
-func (c *Cache) Get(id string) (Cacheable, bool) {
+var ErrNotFound = errors.New("Key not found in cache")
+
+func (c *Cache) Get(id string) (Cacheable, error) {
 	req := reqGet{id: id, reply: make(chan Cacheable)}
 	c.opChan <- req
 	e, ok := <-req.reply
-	return e, ok
+	if !ok {
+		return nil, ErrNotFound
+	}
+	if e == nil {
+		return nil, (<-req.reply).(error)
+	}
+	return e, nil
 }
 
 func (c *Cache) Delete(id string) {
@@ -323,8 +347,12 @@ func (c *Cache) Close() error {
 }
 
 // Used to populate the cache if an entry is not found. If result is not nil,
-// it is stored in cache and returned from Get. Call with f is nil to clear.
-func (c *Cache) OnMiss(f func(string) Cacheable) {
+// it is stored in cache and returned from Get. Call with f is nil to clear. If
+// the function returns a non-nil error, that error is directly returned from
+// the Get() call that caused it to be invoked. Note that it is legal to return
+// (nil, nil): that just means the specific key could not be found. It will be
+// treated as a Get() to an unknown key without an OnMiss handler set.
+func (c *Cache) OnMiss(f func(string) (Cacheable, error)) {
 	c.opChan <- reqOnMissFunc(f)
 }
 
@@ -359,7 +387,7 @@ func InitShared(maxsize int64) {
 	sharedCache.Init(maxsize)
 }
 
-func Get(id string) (Cacheable, bool) {
+func Get(id string) (Cacheable, error) {
 	return sharedCache.Get(id)
 }
 

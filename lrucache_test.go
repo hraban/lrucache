@@ -1,6 +1,7 @@
 package lrucache
 
 import (
+	"errors"
 	"math/rand"
 	"runtime"
 	"strconv"
@@ -86,12 +87,12 @@ func TestSize(t *testing.T) {
 		t.Errorf("Unexpected size: %d", c.Size())
 	}
 	for i := 0; i < 4; i++ {
-		if _, ok := c.Get(strconv.Itoa(i)); ok {
+		if _, err := c.Get(strconv.Itoa(i)); err != ErrNotFound {
 			t.Errorf("Expected %d to be purged", i)
 		}
 	}
 	for i := 4; i < 15; i++ {
-		if _, ok := c.Get(strconv.Itoa(i)); !ok {
+		if _, err := c.Get(strconv.Itoa(i)); err != nil {
 			t.Errorf("Expected %d to be cached", i)
 		}
 	}
@@ -105,26 +106,30 @@ func TestOnMiss(t *testing.T) {
 	for i := 5; i < 10; i++ {
 		misses[strconv.Itoa(i)] = 0
 	}
-	c.OnMiss(func(id string) Cacheable {
+	c.OnMiss(func(id string) (Cacheable, error) {
 		if _, ok := misses[id]; !ok {
-			t.Errorf("Unexpected cache miss for %q", id)
-		} else {
-			delete(misses, id)
+			return nil, nil
 		}
+		delete(misses, id)
 		i, err := strconv.Atoi(id)
 		if err != nil {
-			t.Fatalf("Illegal id: %q", id)
+			return nil, errors.New("Illegal id: " + id)
 		}
-		return i
+		return i, nil
 	})
 	for i := 0; i < 5; i++ {
 		c.Set(strconv.Itoa(i), i)
 	}
 	for i := 0; i < 10; i++ {
-		x, ok := c.Get(strconv.Itoa(i))
-		if !ok {
-			t.Errorf("Unexpected not-found Get for %d", i)
+		x, err := c.Get(strconv.Itoa(i))
+		switch err {
+		case nil:
+			break
+		case ErrNotFound:
+			t.Errorf("Unexpected cache miss for %d", i)
 			continue
+		default:
+			t.Fatal(err)
 		}
 		if j := x.(int); j != i {
 			t.Errorf("Illegal cache value: expected %d, got %d", i, j)
@@ -140,7 +145,7 @@ func TestConcurrentOnMiss(t *testing.T) {
 	defer c.Close()
 	ch := make(chan int)
 	// If key foo is requested but not cached, read it from the channel
-	c.OnMiss(func(id string) Cacheable {
+	c.OnMiss(func(id string) (Cacheable, error) {
 		if id == "foo" {
 			// Indicate that we want a value
 			ch <- 0
@@ -149,9 +154,9 @@ func TestConcurrentOnMiss(t *testing.T) {
 			// this Gosched() is left out, a deadlock occurs. Why? What is the
 			// idiomatic way to do this?
 			runtime.Gosched()
-			return <-ch
+			return <-ch, nil
 		}
-		return nil
+		return nil, nil
 	})
 	go func() {
 		c.Get("foo")
@@ -162,8 +167,12 @@ func TestConcurrentOnMiss(t *testing.T) {
 	c.Set("bar", 10)
 	// Unlock that poor blocked goroutine
 	ch <- 10
-	if result, ok := c.Get("foo"); !ok || result != 10 {
-		t.Errorf("Expected 10, got: %d", result)
+	result, err := c.Get("foo")
+	switch {
+	case err != nil:
+		t.Error(`Error while fetching "foo":`, err)
+	case result != 10:
+		t.Error("Expected 10, got:", result)
 	}
 }
 
@@ -173,15 +182,15 @@ func TestZeroSize(t *testing.T) {
 	c.Set("a", varsize(0))
 	c.Set("b", varsize(1))
 	c.Set("c", varsize(2))
-	if _, ok := c.Get("a"); !ok {
+	if _, err := c.Get("a"); err != nil {
 		t.Error("Purged element with size=0; should have left in cache")
 	}
 	c.Delete("a")
 	c.Set("d", varsize(2))
-	if _, ok := c.Get("c"); ok {
+	if _, err := c.Get("c"); err != ErrNotFound {
 		t.Error("Kept `c' around for too long after removing empty element")
 	}
-	if _, ok := c.Get("d"); !ok {
+	if _, err := c.Get("d"); err != nil {
 		t.Error("Failed to cache `d' after removing empty element")
 	}
 }
