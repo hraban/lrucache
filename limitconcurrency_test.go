@@ -23,6 +23,7 @@ func TestNoConcurrentDupes(t *testing.T) {
 		return nil
 	}
 	safecounter := NoConcurrentDupes(typedcounter)
+	defer safecounter("")
 	for i := 0; i < 10; i++ {
 		go safecounter("foo")
 	}
