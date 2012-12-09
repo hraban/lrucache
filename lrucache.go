@@ -317,6 +317,11 @@ func (c *Cache) Delete(id string) {
 	c.opChan <- reqDelete(id)
 }
 
+func (c *Cache) Close() error {
+	close(c.opChan)
+	return nil
+}
+
 // Used to populate the cache if an entry is not found. If result is not nil,
 // it is stored in cache and returned from Get. Call with f is nil to clear.
 func (c *Cache) OnMiss(f func(string) Cacheable) {
