@@ -387,21 +387,29 @@ func New(maxsize int64) *Cache {
 
 var sharedCache Cache
 
-// Only necessary if you plan on using non-methods Get and Set.
-func InitShared(maxsize int64) {
-	sharedCache.Init(maxsize)
-}
-
+// Get an element from the shared cache.
 func Get(id string) (Cacheable, error) {
 	return sharedCache.Get(id)
 }
 
+// Put an object in the shared cache (requires no configuration).
 func Set(id string, c Cacheable) {
 	sharedCache.Set(id, c)
 	return
 }
 
+// Delete an item from the shared cache.
 func Delete(id string) {
 	sharedCache.Delete(id)
 	return
+}
+
+// A shared cache is available immediately for all users of this library. By
+// default, there is no size limit. Use this function to change that.
+func MaxSharedSize(size int64) {
+	sharedCache.MaxSize(size)
+}
+
+func init() {
+	sharedCache.Init(0)
 }
