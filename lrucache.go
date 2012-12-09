@@ -190,6 +190,9 @@ func purgeLRU(c *Cache) {
 
 // Trim the cache until its size <= max size
 func trimCache(c *Cache) {
+	if c.maxSize <= 0 {
+		return
+	}
 	for c.size > c.maxSize {
 		purgeLRU(c)
 	}
@@ -360,7 +363,9 @@ func (c *Cache) OnMiss(f func(string) (Cacheable, error)) {
 // unit it is that your cache entries return from Size(). If (roughly) all
 // cached items are going to be (roughly) the same size it makes sense to
 // return 1 from Size() and set maxSize to the maximum number of elements you
-// want to allow in cache.
+// want to allow in cache. To remove the limit altogether set a maximum size of
+// 0. No elements will be purged with reason CACHEFULL until the next call to
+// MaxSize.
 func (c *Cache) MaxSize(i int64) {
 	c.opChan <- reqMaxSize(i)
 }
