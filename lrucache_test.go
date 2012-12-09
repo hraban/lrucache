@@ -8,12 +8,6 @@ import (
 	"testing"
 )
 
-type flatsize int
-
-func (i flatsize) Size() int64 {
-	return 1
-}
-
 type varsize int
 
 func (i varsize) Size() int64 {
@@ -121,10 +115,10 @@ func TestOnMiss(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Illegal id: %q", id)
 		}
-		return flatsize(flatsize(i))
+		return i
 	})
 	for i := 0; i < 5; i++ {
-		c.Set(strconv.Itoa(i), flatsize(i))
+		c.Set(strconv.Itoa(i), i)
 	}
 	for i := 0; i < 10; i++ {
 		x, ok := c.Get(strconv.Itoa(i))
@@ -132,7 +126,7 @@ func TestOnMiss(t *testing.T) {
 			t.Errorf("Unexpected not-found Get for %d", i)
 			continue
 		}
-		if j := x.(flatsize); int(j) != i {
+		if j := x.(int); j != i {
 			t.Errorf("Illegal cache value: expected %d, got %d", i, j)
 		}
 	}
@@ -144,12 +138,12 @@ func TestOnMiss(t *testing.T) {
 func TestConcurrentOnMiss(t *testing.T) {
 	c := New(10)
 	defer c.Close()
-	ch := make(chan flatsize)
+	ch := make(chan int)
 	// If key foo is requested but not cached, read it from the channel
 	c.OnMiss(func(id string) Cacheable {
 		if id == "foo" {
 			// Indicate that we want a value
-			ch <- flatsize(0)
+			ch <- 0
 			// To be perfectly honest: I do not understand why this scheduler
 			// call is necessary. Channel operations are not enough, here? If
 			// this Gosched() is left out, a deadlock occurs. Why? What is the
@@ -165,10 +159,10 @@ func TestConcurrentOnMiss(t *testing.T) {
 	<-ch
 	// Now we know for sure: a goroutine is blocking on c.Get("foo").
 	// But other cache operations should be unaffected:
-	c.Set("bar", flatsize(10))
+	c.Set("bar", 10)
 	// Unlock that poor blocked goroutine
-	ch <- flatsize(10)
-	if result, ok := c.Get("foo"); !ok || result != flatsize(10) {
+	ch <- 10
+	if result, ok := c.Get("foo"); !ok || result != 10 {
 		t.Errorf("Expected 10, got: %d", result)
 	}
 }
@@ -197,7 +191,7 @@ func benchmarkGet(b *testing.B, conc int) {
 	// Size doesn't matter (that's what she said)
 	c := New(1000)
 	defer c.Close()
-	c.Set("x", flatsize(1))
+	c.Set("x", 1)
 	syncCache(c)
 	var wg sync.WaitGroup
 	wg.Add(conc)
@@ -226,7 +220,7 @@ func benchmarkSet(b *testing.B, conc int) {
 	for i := 0; i < conc; i++ {
 		go func() {
 			for i := 0; i < b.N/conc; i++ {
-				c.Set(strconv.Itoa(i), flatsize(i))
+				c.Set(strconv.Itoa(i), i)
 			}
 			wg.Done()
 		}()
@@ -247,7 +241,7 @@ func benchmarkAll(b *testing.B, conc int) {
 	for i := 0; i < conc; i++ {
 		go func() {
 			for i := 0; i < b.N/3/conc; i++ {
-				c.Set(strconv.Itoa(rand.Int()), flatsize(1))
+				c.Set(strconv.Itoa(rand.Int()), 1)
 				c.Get(strconv.Itoa(rand.Int()))
 				c.Delete(strconv.Itoa(rand.Int()))
 			}
