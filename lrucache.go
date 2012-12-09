@@ -24,16 +24,12 @@
 //
 //      c := lrucache.New(1234)
 //
-// Then define a type that implements the Cacheable interface:
+// Then, optionally, define a type that implements some of the interfaces:
 //
 //      type cacheableInt int
 //      
-//      func (i cacheableInt) OnPurge(why PurgeReason) {
+//      func (i cacheableInt) OnPurge(why lrucache.PurgeReason) {
 //          fmt.Printf("Purging %d\n", i)
-//      }
-//      
-//      func (i cacheableInt) Size() int64 {
-//          return 1
 //      }
 //
 // Finally:
@@ -56,7 +52,7 @@
 // exceeds the maximum cache size, elements start getting purged until it
 // drops below the threshold again.
 //
-// * The integers are passed by value. Caching pointers is, of course, Okay,
+// * These integers are passed by value. Caching pointers is, of course, Okay,
 // but be careful when caching a memory location that holds two different
 // values at different points in time; updating the value of a pointer after
 // caching it will change the cached value.
@@ -74,12 +70,23 @@ type Cache struct {
 	onMiss func(string) Cacheable
 }
 
-// Required interface for cached objects
-type Cacheable interface {
+// Anything can be cached!
+type Cacheable interface{}
+
+// Optional interface for cached objects. If this interface is not implemented,
+// an element is assumed to have size 1.
+type SizeAware interface {
 	// See Cache.MaxSize() for an explanation of the semantics. Please report a
 	// constant size; the cache does not expect objects to change size while
 	// they are cached. Items are trusted to report their own size accurately.
 	Size() int64
+}
+
+func getSize(x Cacheable) int64 {
+	if s, ok := x.(SizeAware); ok {
+		return s.Size()
+	}
+	return 1
 }
 
 // Reasons for a cached element to be deleted from the cache
@@ -96,7 +103,6 @@ const (
 
 // Optional interface for cached objects
 type NotifyPurge interface {
-	Cacheable
 	// Called once when the element is purged from cache. The argument
 	// indicates why.
 	//
@@ -163,7 +169,7 @@ func removeEntry(c *Cache, e *cacheEntry) {
 	} else {
 		e.next.prev = e.prev
 	}
-	c.size -= e.payload.Size()
+	c.size -= getSize(e.payload)
 	return
 }
 
@@ -191,7 +197,7 @@ func directSet(c *Cache, req reqSet) {
 	}
 	e := cacheEntry{payload: req.payload, id: req.id}
 	c.entries[req.id] = &e
-	size := e.payload.Size()
+	size := getSize(e.payload)
 	if size == 0 {
 		return
 	}
@@ -216,7 +222,7 @@ func directDelete(c *Cache, req reqDelete) {
 	e, ok := c.entries[id]
 	if ok {
 		safeOnPurge(e.payload, EXPLICITDELETE)
-		if e.payload.Size() != 0 {
+		if getSize(e.payload) != 0 {
 			removeEntry(c, e)
 		}
 	}
