@@ -1,8 +1,10 @@
 package lrucache
 
 import (
+	"math/rand"
 	"runtime"
 	"strconv"
+	"sync"
 	"testing"
 )
 
@@ -181,4 +183,91 @@ func TestZeroSize(t *testing.T) {
 	if _, ok := c.Get("d"); !ok {
 		t.Error("Failed to cache `d' after removing empty element")
 	}
+}
+
+func benchmarkGet(b *testing.B, conc int) {
+	b.StopTimer()
+	// Size doesn't matter (that's what she said)
+	c := New(1000)
+	c.Set("x", flatsize(1))
+	syncCache(c)
+	var wg sync.WaitGroup
+	wg.Add(conc)
+	b.StartTimer()
+	for i := 0; i < conc; i++ {
+		go func() {
+			for i := 0; i < b.N/conc; i++ {
+				c.Get("x")
+			}
+			syncCache(c)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+}
+
+func benchmarkSet(b *testing.B, conc int) {
+	b.StopTimer()
+	// Size matters.
+	c := New(int64(b.N) / 4)
+	syncCache(c)
+	var wg sync.WaitGroup
+	wg.Add(conc)
+	b.StartTimer()
+	for i := 0; i < conc; i++ {
+		go func() {
+			for i := 0; i < b.N/conc; i++ {
+				c.Set(strconv.Itoa(i), flatsize(i))
+			}
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	syncCache(c)
+}
+
+func benchmarkAll(b *testing.B, conc int) {
+	b.StopTimer()
+	// Size is definitely important, but what is the right size?
+	c := New(int64(b.N) / 4)
+	syncCache(c)
+	var wg sync.WaitGroup
+	wg.Add(conc)
+	b.StartTimer()
+	for i := 0; i < conc; i++ {
+		go func() {
+			for i := 0; i < b.N/3/conc; i++ {
+				c.Set(strconv.Itoa(rand.Int()), flatsize(1))
+				c.Get(strconv.Itoa(rand.Int()))
+				c.Delete(strconv.Itoa(rand.Int()))
+			}
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	syncCache(c)
+}
+
+func BenchmarkGet(b *testing.B) {
+	benchmarkGet(b, 1)
+}
+
+func Benchmark5ConcurrentGet(b *testing.B) {
+	benchmarkGet(b, 5)
+}
+
+func BenchmarkSet(b *testing.B) {
+	benchmarkSet(b, 1)
+}
+
+func Benchmark5ConcurrentSet(b *testing.B) {
+	benchmarkSet(b, 5)
+}
+
+func BenchmarkAll(b *testing.B) {
+	benchmarkAll(b, 1)
+}
+
+func Benchmark5ConcurrentAll(b *testing.B) {
+	benchmarkAll(b, 5)
 }
