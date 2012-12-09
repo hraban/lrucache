@@ -66,7 +66,7 @@ func TestThrottleConcurrency(t *testing.T) {
 		go safef("foo")
 	}
 	wg.Wait()
-	if max > limit {
-		t.Errorf("Too many concurrent calls detected (%d > %d)", max, limit)
+	if max != limit {
+		t.Errorf("Unexpected maximum concurrency: %d (expected %d)", max, limit)
 	}
 }
