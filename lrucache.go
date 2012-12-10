@@ -63,6 +63,8 @@ import (
 	"errors"
 )
 
+type OnMissHandler func(string) (Cacheable, error)
+
 type Cache struct {
 	maxSize int64
 	size    int64
@@ -71,7 +73,7 @@ type Cache struct {
 	opChan           chan operation
 	lruHead, lruTail *cacheEntry
 	// If not nil, invoked for every cache miss.
-	onMiss func(string) (Cacheable, error)
+	onMiss OnMissHandler
 }
 
 // Anything can be cached!
@@ -144,7 +146,7 @@ type reqGet struct {
 
 type reqDelete string
 
-type reqOnMissFunc func(string) (Cacheable, error)
+type reqOnMissFunc OnMissHandler
 
 type reqMaxSize int64
 
@@ -301,7 +303,7 @@ func (c *Cache) Init(maxsize int64) {
 			case reqGet:
 				directGet(c, req)
 			case reqOnMissFunc:
-				c.onMiss = req
+				c.onMiss = OnMissHandler(req)
 			case reqMaxSize:
 				c.maxSize = int64(req)
 				trimCache(c)
@@ -355,7 +357,7 @@ func (c *Cache) Close() error {
 // the Get() call that caused it to be invoked. Note that it is legal to return
 // (nil, nil): that just means the specific key could not be found. It will be
 // treated as a Get() to an unknown key without an OnMiss handler set.
-func (c *Cache) OnMiss(f func(string) (Cacheable, error)) {
+func (c *Cache) OnMiss(f OnMissHandler) {
 	c.opChan <- reqOnMissFunc(f)
 }
 
