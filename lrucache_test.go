@@ -260,22 +260,58 @@ func BenchmarkGet(b *testing.B) {
 	benchmarkGet(b, 1)
 }
 
-func Benchmark5ConcurrentGet(b *testing.B) {
-	benchmarkGet(b, 5)
+func Benchmark10ConcurrentGet(b *testing.B) {
+	benchmarkGet(b, 10)
+}
+
+func Benchmark100ConcurrentGet(b *testing.B) {
+	benchmarkGet(b, 100)
+}
+
+func Benchmark1KConcurrentGet(b *testing.B) {
+	benchmarkGet(b, 1000)
+}
+
+func Benchmark10KConcurrentGet(b *testing.B) {
+	benchmarkGet(b, 10000)
 }
 
 func BenchmarkSet(b *testing.B) {
 	benchmarkSet(b, 1)
 }
 
-func Benchmark5ConcurrentSet(b *testing.B) {
-	benchmarkSet(b, 5)
+func Benchmark10ConcurrentSet(b *testing.B) {
+	benchmarkSet(b, 10)
+}
+
+func Benchmark100ConcurrentSet(b *testing.B) {
+	benchmarkSet(b, 100)
+}
+
+func Benchmark1KConcurrentSet(b *testing.B) {
+	benchmarkSet(b, 10000)
+}
+
+func Benchmark10KConcurrentSet(b *testing.B) {
+	benchmarkSet(b, 10000)
 }
 
 func BenchmarkAll(b *testing.B) {
 	benchmarkAll(b, 1)
 }
 
-func Benchmark5ConcurrentAll(b *testing.B) {
-	benchmarkAll(b, 5)
+func Benchmark10ConcurrentAll(b *testing.B) {
+	benchmarkAll(b, 10)
+}
+
+func Benchmark100ConcurrentAll(b *testing.B) {
+	benchmarkAll(b, 100)
+}
+
+func Benchmark1K(b *testing.B) {
+	benchmarkAll(b, 1000)
+}
+
+func Benchmark10KConcurrentAll(b *testing.B) {
+	benchmarkAll(b, 10000)
 }
