@@ -134,14 +134,21 @@ type reqSet struct {
 	payload Cacheable
 }
 
+// Reply to a Get request
+type replyGet struct {
+	val Cacheable
+	err error
+}
+
 type reqGet struct {
 	id string
 	// If the key is found the value is pushed down this channel after which it
 	// is closed immediately. If the value is not found, OnMiss is called. If
-	// that results in an error, nil is pushed down the channel, followed by
-	// the error, after which it is closed. If that does not work (OnMiss is
-	// not defined, or it returns nil) the channel is closed immediately.
-	reply chan Cacheable
+	// that does not work (OnMiss is not defined, or it returns nil) the
+	// error is set to ErrNotFound. Otherwise the result is set to whatever
+	// OnMiss returned. One way or another, exactly one value is pushed down
+	// this channel, after which it is closed.
+	reply chan<- replyGet
 }
 
 type reqDelete string
@@ -244,23 +251,15 @@ func directDelete(c *Cache, req reqDelete) {
 
 // Handle a cache miss from outside the main goroutine
 func handleCacheMiss(c *Cache, req reqGet) {
+	var val Cacheable
+	var err error
 	if c.onMiss != nil {
-		p, err := c.onMiss(req.id)
-		switch {
-		case err != nil:
-			req.reply <- nil
-			req.reply <- err
-			break
-		case p == nil:
-			break
-		default:
-			// Push new value back into cache (normally, thus safely)
-			c.Set(req.id, p)
-			// After that is done, this Get is finally complete
-			req.reply <- p
-			break
-		}
+		val, err = c.onMiss(req.id)
 	}
+	if val == nil && err == nil {
+		err = ErrNotFound
+	}
+	req.reply <- replyGet{val, err}
 	close(req.reply)
 	return
 }
@@ -272,7 +271,7 @@ func directGet(c *Cache, req reqGet) {
 		go handleCacheMiss(c, req)
 		return
 	}
-	req.reply <- e.payload
+	req.reply <- replyGet{e.payload, nil}
 	close(req.reply)
 	if e.next == nil {
 		return
@@ -330,16 +329,11 @@ func (c *Cache) Set(id string, p Cacheable) {
 var ErrNotFound = errors.New("Key not found in cache")
 
 func (c *Cache) Get(id string) (Cacheable, error) {
-	req := reqGet{id: id, reply: make(chan Cacheable)}
+	replychan := make(chan replyGet)
+	req := reqGet{id: id, reply: replychan}
 	c.opChan <- req
-	e, ok := <-req.reply
-	if !ok {
-		return nil, ErrNotFound
-	}
-	if e == nil {
-		return nil, (<-req.reply).(error)
-	}
-	return e, nil
+	reply := <-replychan
+	return reply.val, reply.err
 }
 
 func (c *Cache) Delete(id string) {

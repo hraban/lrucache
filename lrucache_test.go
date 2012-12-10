@@ -3,7 +3,6 @@ package lrucache
 import (
 	"errors"
 	"math/rand"
-	"runtime"
 	"strconv"
 	"sync"
 	"testing"
@@ -149,11 +148,6 @@ func TestConcurrentOnMiss(t *testing.T) {
 		if id == "foo" {
 			// Indicate that we want a value
 			ch <- 0
-			// To be perfectly honest: I do not understand why this scheduler
-			// call is necessary. Channel operations are not enough, here? If
-			// this Gosched() is left out, a deadlock occurs. Why? What is the
-			// idiomatic way to do this?
-			runtime.Gosched()
 			return <-ch, nil
 		}
 		return nil, nil
@@ -166,7 +160,8 @@ func TestConcurrentOnMiss(t *testing.T) {
 	// But other cache operations should be unaffected:
 	c.Set("bar", 10)
 	// Unlock that poor blocked goroutine
-	ch <- 10
+	ch <- 3
+	go func() { <-ch; ch <- 10 }()
 	result, err := c.Get("foo")
 	switch {
 	case err != nil:

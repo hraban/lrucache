@@ -3,33 +3,57 @@ package lrucache
 // Process operations concurrently except for those with an identical key.
 func nocondupesMainloop(f OnMissHandler, opchan chan reqGet) {
 	// Push result of call to wrapped function down this channel
-	waiting := map[string]chan Cacheable{}
-	for r := range opchan {
-		reschan, inprogress := waiting[r.id]
-		if !inprogress {
-			reschan = make(chan Cacheable)
-			waiting[r.id] = reschan
-		}
-		// Explicit argument to deal with Go closure semantics
-		go func(r reqGet) {
-			var result Cacheable
-			var err Cacheable
-			if inprogress {
-				// Already waiting for a call to complete, subscribe to result
-				result = <-reschan
-				err = <-reschan
-				// Pass the result to the waiting call to wrapper
-				r.reply <- result
-				r.reply <- err
-				close(r.reply)
-			} else {
-				// Get result from wrapped function directly
-				result, err = f(r.id)
-			}
-			reschan <- result
-			reschan <- err
-		}(r)
+	waiting := map[string]chan replyGet{}
+	type fullReply struct {
+		replyGet
+		id string
 	}
+	donechan := make(chan fullReply)
+	for donechan != nil {
+		select {
+		// A new subscriber appears!
+		case r, ok := <-opchan:
+			if !ok {
+				// Stop bothering with incoming operations
+				opchan = nil
+			}
+			oldreplychan, inprogress := waiting[r.id]
+			newreplychan := make(chan replyGet)
+			waiting[r.id] = newreplychan
+			if !inprogress {
+				// Launch a seed
+				// Explicit argument to deal with Go closure semantics
+				go func(r reqGet) {
+					var reply fullReply
+					reply.id = r.id
+					reply.val, reply.err = f(r.id)
+					donechan <- reply
+				}(r)
+			}
+			// Launch a consumer
+			go func(r reqGet) {
+				reply := <-newreplychan
+				// Pass the result to the waiting call to wrapper
+				r.reply <- reply
+				close(r.reply)
+				if oldreplychan != nil {
+					// Forward the reply to the next listener
+					oldreplychan <- reply
+					close(oldreplychan)
+				}
+			}(r)
+			break
+		case full := <-donechan:
+			waiting[full.id] <- full.replyGet
+			delete(waiting, full.id)
+			if opchan == nil && len(waiting) == 0 {
+				close(donechan)
+				donechan = nil
+			}
+			break
+		}
+	}
+	return
 }
 
 // Concurrent duplicate calls (same arg) are unified into one call. The result
@@ -42,18 +66,14 @@ func NoConcurrentDupes(f OnMissHandler) OnMissHandler {
 	opchan := make(chan reqGet)
 	go nocondupesMainloop(f, opchan)
 	return func(key string) (Cacheable, error) {
-		reschan := make(chan Cacheable)
 		if key == "" {
 			close(opchan)
 			return nil, nil
 		}
-		opchan <- reqGet{key, reschan}
-		res := <-reschan
-		var err error
-		if res2 := <-reschan; res2 != nil {
-			err = res2.(error)
-		}
-		return res, err
+		replychan := make(chan replyGet)
+		opchan <- reqGet{key, replychan}
+		reply := <-replychan
+		return reply.val, reply.err
 	}
 }
 

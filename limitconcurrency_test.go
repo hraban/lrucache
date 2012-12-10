@@ -16,22 +16,31 @@ func counter() func() int {
 
 func TestNoConcurrentDupes(t *testing.T) {
 	rawcounter := counter()
-	wait := make(chan bool)
+	var main, threads sync.WaitGroup
+	main.Add(1)
 	typedcounter := func(x string) (Cacheable, error) {
 		rawcounter()
-		wait <- <-wait
-		return nil, nil
+		main.Wait()
+		return 7878, nil
 	}
 	safecounter := NoConcurrentDupes(typedcounter)
 	defer safecounter("")
 	for i := 0; i < 10; i++ {
-		go safecounter("foo")
+		threads.Add(1)
+		go func() {
+			val, _ := safecounter("foo")
+			if val != 7878 {
+				t.Error("Unexpected value:", val)
+			}
+			threads.Done()
+		}()
 	}
 	// Wait a bit to allow all typedcounter calls to increase the counter. This
 	// cannot be done deterministically because the entire point is to test how
 	// many of them are invoked in the first place.
 	time.Sleep(10 * time.Millisecond)
-	wait <- true
+	main.Done()
+	threads.Wait()
 	count := rawcounter() - 1
 	if count != 1 {
 		t.Errorf("Function called too often (%d times)", count)
