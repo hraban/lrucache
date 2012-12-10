@@ -17,10 +17,10 @@ func counter() func() int {
 func TestNoConcurrentDupes(t *testing.T) {
 	rawcounter := counter()
 	wait := make(chan bool)
-	typedcounter := func(x string) Cacheable {
+	typedcounter := func(x string) (Cacheable, error) {
 		rawcounter()
 		wait <- <-wait
-		return nil
+		return nil, nil
 	}
 	safecounter := NoConcurrentDupes(typedcounter)
 	defer safecounter("")
@@ -49,7 +49,7 @@ func TestThrottleConcurrency(t *testing.T) {
 	var i, max int32
 	const limit = 3
 	var wg sync.WaitGroup
-	unsafef := func(x string) Cacheable {
+	unsafef := func(x string) (Cacheable, error) {
 		newi := atomic.AddInt32(&i, 1)
 		oldmax := atomic.LoadInt32(&max)
 		newmax := maxInt32(oldmax, newi)
@@ -59,7 +59,7 @@ func TestThrottleConcurrency(t *testing.T) {
 		time.Sleep(1 * time.Millisecond)
 		wg.Done()
 		atomic.AddInt32(&i, -1)
-		return nil
+		return nil, nil
 	}
 	safef := ThrottleConcurrency(unsafef, limit)
 	for i := 0; i < 100; i++ {
