@@ -1,5 +1,9 @@
 package lrucache
 
+import (
+	"errors"
+)
+
 // Process operations concurrently except for those with an identical key.
 func nocondupesMainloop(f OnMissHandler, opchan chan reqGet) {
 	// Push result of call to wrapped function down this channel
@@ -66,8 +70,12 @@ func NoConcurrentDupes(f OnMissHandler) OnMissHandler {
 	opchan := make(chan reqGet)
 	go nocondupesMainloop(f, opchan)
 	return func(key string) (Cacheable, error) {
+		if opchan == nil {
+			return nil, errors.New("NoConcurrentDupes wrapper has been closed")
+		}
 		if key == "" {
 			close(opchan)
+			opchan = nil
 			return nil, nil
 		}
 		replychan := make(chan replyGet)
