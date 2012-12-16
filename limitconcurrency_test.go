@@ -47,6 +47,18 @@ func TestNoConcurrentDupes(t *testing.T) {
 	}
 }
 
+func TestNoConcurrentDupes_useStale(t *testing.T) {
+	bare := func(id string) (Cacheable, error) {
+		return 123, nil
+	}
+	safe := NoConcurrentDupes(bare)
+	safe("")
+	_, err := safe("anything")
+	if err == nil {
+		t.Error("Expected error when reusing wrapped f after close")
+	}
+}
+
 func maxInt32(x, y int32) int32 {
 	if x < y {
 		return y
