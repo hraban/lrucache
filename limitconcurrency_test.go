@@ -23,8 +23,8 @@ func TestNoConcurrentDupes(t *testing.T) {
 		main.Wait()
 		return 7878, nil
 	}
-	safecounter := NoConcurrentDupes(typedcounter)
-	defer safecounter("")
+	safecounter, quit := NoConcurrentDupes(typedcounter)
+	defer func() { quit <- true }()
 	for i := 0; i < 10; i++ {
 		threads.Add(1)
 		go func() {
@@ -51,8 +51,8 @@ func TestNoConcurrentDupes_useStale(t *testing.T) {
 	bare := func(id string) (Cacheable, error) {
 		return 123, nil
 	}
-	safe := NoConcurrentDupes(bare)
-	safe("")
+	safe, quit := NoConcurrentDupes(bare)
+	quit <- true
 	_, err := safe("anything")
 	if err == nil {
 		t.Error("Expected error when reusing wrapped f after close")

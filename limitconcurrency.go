@@ -65,25 +65,31 @@ func nocondupesMainloop(f OnMissHandler, opchan chan reqGet) {
 // is returned to all callers by the wrapper. Intended for wrapping OnMiss
 // handlers.
 //
-// Call with the empty string to terminate. Running operations will complete
-// but it is an error to invoke this function after that.
-func NoConcurrentDupes(f OnMissHandler) OnMissHandler {
+// The second return value is the quit channel. Send any value down that
+// channel to stop the wrapper.  Running operations will complete but it is an
+// error to invoke this function after that. Not panic, just an error.
+func NoConcurrentDupes(f OnMissHandler) (OnMissHandler, chan<- bool) {
+	errClosed := errors.New("NoConcurrentDupes wrapper has been closed")
 	opchan := make(chan reqGet)
 	go nocondupesMainloop(f, opchan)
-	return func(key string) (Cacheable, error) {
+	quit := make(chan bool, 1)
+	wrap := func(key string) (Cacheable, error) {
 		if opchan == nil {
-			return nil, errors.New("NoConcurrentDupes wrapper has been closed")
+			return nil, errClosed
 		}
-		if key == "" {
+		select {
+		case <-quit:
 			close(opchan)
 			opchan = nil
-			return nil, nil
+			return nil, errClosed
+		default:
 		}
 		replychan := make(chan replyGet)
 		opchan <- reqGet{key, replychan}
 		reply := <-replychan
 		return reply.val, reply.err
 	}
+	return wrap, quit
 }
 
 // Wrapper function that limits the number of concurrent calls to f. Intended
