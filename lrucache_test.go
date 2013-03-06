@@ -328,7 +328,7 @@ func Benchmark100ConcurrentAll(b *testing.B) {
 	benchmarkAll(b, 100)
 }
 
-func Benchmark1K(b *testing.B) {
+func Benchmark1KConcurrentAll(b *testing.B) {
 	benchmarkAll(b, 1000)
 }
 
