@@ -20,6 +20,7 @@ func nocondupesMainloop(f OnMissHandler, opchan chan reqGet) {
 			if !ok {
 				// Stop bothering with incoming operations
 				opchan = nil
+				break
 			}
 			oldreplychan, inprogress := waiting[r.id]
 			newreplychan := make(chan replyGet)
