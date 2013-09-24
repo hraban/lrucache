@@ -65,6 +65,8 @@ func TestOnPurge_1(t *testing.T) {
 	if x.why != CACHEFULL {
 		t.Error("Element should have been purged but was deleted")
 	}
+
+	verifyIntegrity(t, c)
 }
 
 func TestOnPurge_2(t *testing.T) {
@@ -80,6 +82,8 @@ func TestOnPurge_2(t *testing.T) {
 	if x.why != EXPLICITDELETE {
 		t.Error("Element should have been deleted but was purged")
 	}
+
+	verifyIntegrity(t, c)
 }
 
 // Just test filling a cache with a type that does not implement NotifyPurge
@@ -91,6 +95,8 @@ func TestsafeOnPurge(t *testing.T) {
 	c.Set("i", i)
 	c.Set("j", j)
 	syncCache(c)
+
+	verifyIntegrity(t, c)
 }
 
 func TestSize(t *testing.T) {
@@ -115,6 +121,8 @@ func TestSize(t *testing.T) {
 			t.Errorf("Expected %d to be cached", i)
 		}
 	}
+
+	verifyIntegrity(t, c)
 }
 
 func TestOnMiss(t *testing.T) {
@@ -157,6 +165,8 @@ func TestOnMiss(t *testing.T) {
 	for k := range misses {
 		t.Errorf("Expected %s to miss", k)
 	}
+
+	verifyIntegrity(t, c)
 }
 
 func TestConcurrentOnMiss(t *testing.T) {
@@ -189,6 +199,8 @@ func TestConcurrentOnMiss(t *testing.T) {
 	case result != 10:
 		t.Error("Expected 10, got:", result)
 	}
+
+	verifyIntegrity(t, c)
 }
 
 func TestZeroSize(t *testing.T) {
@@ -207,6 +219,32 @@ func TestZeroSize(t *testing.T) {
 	}
 	if _, err := c.Get("d"); err != nil {
 		t.Error("Failed to cache `d' after removing empty element")
+	}
+
+	verifyIntegrity(t, c)
+}
+
+func verifyIntegrity(t *testing.T, c *Cache) {
+	hKeys := make([]string, 0)
+	for h := c.lruHead; h != nil; h = h.prev {
+		hKeys = append(hKeys, h.id)
+	}
+
+	tKeys := make([]string, 0)
+	for t := c.lruTail; t != nil; t = t.next {
+		tKeys = append(tKeys, t.id)
+	}
+
+	if len(hKeys) != len(tKeys) {
+		t.Error("Doubly linked list inconsistent. head has " + strconv.Itoa(len(hKeys)) + " entries and tail has " + strconv.Itoa(len(tKeys)) + " entries")
+	}
+
+	for i := 0; i < len(hKeys); i++ {
+		j := (len(hKeys) - i) - 1
+
+		if hKeys[i] != tKeys[j] {
+			t.Error("Key mismatch; head has " + hKeys[i] + " and tail has " + tKeys[j])
+		}
 	}
 }
 
