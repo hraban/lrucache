@@ -27,7 +27,7 @@
 // Then, optionally, define a type that implements some of the interfaces:
 //
 //      type cacheableInt int
-//      
+//
 //      func (i cacheableInt) OnPurge(why lrucache.PurgeReason) {
 //          fmt.Printf("Purging %d\n", i)
 //      }
@@ -285,6 +285,8 @@ func directGet(c *Cache, req reqGet) {
 	e.next.prev = e.prev
 	e.prev = c.lruHead
 	c.lruHead = e
+	e.prev.next = e
+	e.next = nil
 	return
 }
 
