@@ -72,8 +72,11 @@ type Cache struct {
 	size    int64
 	entries map[string]*cacheEntry
 	// Cache operations are pushed down this channel to the main cache loop
-	opChan           chan operation
-	lruHead, lruTail *cacheEntry
+	opChan chan operation
+	// most recently used entry
+	mostRU *cacheEntry
+	// least recently used entry
+	leastRU *cacheEntry
 	// If not nil, invoked for every cache miss.
 	onMiss OnMissHandler
 }
@@ -164,8 +167,10 @@ type reqGetSize chan<- int64
 type cacheEntry struct {
 	payload Cacheable
 	id      string
-	// Pointers for LRU cache
-	prev, next *cacheEntry
+	// youngest older entry (age being usage) (DLL pointer)
+	older *cacheEntry
+	// oldest younger entry (age being usage) (DLL pointer)
+	younger *cacheEntry
 }
 
 // Only call c.OnPurge() if c implements NotifyPurge.
@@ -178,15 +183,15 @@ func safeOnPurge(c Cacheable, why PurgeReason) {
 
 func removeEntry(c *Cache, e *cacheEntry) {
 	delete(c.entries, e.id)
-	if e.prev == nil {
-		c.lruTail = e.next
+	if e.older == nil {
+		c.leastRU = e.younger
 	} else {
-		e.prev.next = e.next
+		e.older.younger = e.younger
 	}
-	if e.next == nil {
-		c.lruHead = e.prev
+	if e.younger == nil {
+		c.mostRU = e.older
 	} else {
-		e.next.prev = e.prev
+		e.younger.older = e.older
 	}
 	c.size -= getSize(e.payload)
 	return
@@ -194,8 +199,8 @@ func removeEntry(c *Cache, e *cacheEntry) {
 
 // Purge the least recently used from the cache
 func purgeLRU(c *Cache) {
-	safeOnPurge(c.lruTail.payload, CACHEFULL)
-	removeEntry(c, c.lruTail)
+	safeOnPurge(c.leastRU.payload, CACHEFULL)
+	removeEntry(c, c.leastRU)
 	return
 }
 
@@ -223,15 +228,17 @@ func directSet(c *Cache, req reqSet) {
 	if size == 0 {
 		return
 	}
-	if c.lruTail == nil {
-		c.lruTail = &e
-		c.lruHead = &e
-		e.next = nil
-		e.prev = nil
+	if c.leastRU == nil { // aka "if this is the first entry..."
+		// init DLL
+		c.leastRU = &e
+		c.mostRU = &e
+		e.younger = nil
+		e.older = nil
 	} else {
-		c.lruHead.next = &e
-		e.prev = c.lruHead
-		c.lruHead = &e
+		// e is younger than the old "most recently used"
+		c.mostRU.younger = &e
+		e.older = c.mostRU
+		c.mostRU = &e
 	}
 	c.size += size
 	trimCache(c)
@@ -275,20 +282,23 @@ func directGet(c *Cache, req reqGet) {
 	}
 	req.reply <- replyGet{e.payload, nil}
 	close(req.reply)
-	if e.next == nil {
+	if e.younger == nil {
+		// I'm already the fresh kid on the block
 		return
 	}
 	// Put element at the start of the LRU list
-	if e.prev != nil {
-		e.prev.next = e.next
+	if e.older != nil {
+		e.older.younger = e.younger // the only reason this is a *D*LL
 	} else {
-		c.lruTail = e.next
+		// pfew! just in time... c.leastRU is the pointer of death
+		c.leastRU = e.younger // (ok and this)
 	}
-	e.next.prev = e.prev
-	e.prev = c.lruHead
-	c.lruHead = e
-	e.prev.next = e
-	e.next = nil
+	// some pointer mumbo jumbo
+	e.younger.older = e.older
+	e.older = c.mostRU  // my elder is whoever used to be youngest
+	c.mostRU = e        // I'm the newest one now!
+	e.younger = nil     // nobody's younger than me
+	e.older.younger = e // eeeeee
 	return
 }
 

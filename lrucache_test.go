@@ -226,12 +226,12 @@ func TestZeroSize(t *testing.T) {
 
 func verifyIntegrity(t *testing.T, c *Cache) {
 	hKeys := make([]string, 0)
-	for h := c.lruHead; h != nil; h = h.prev {
+	for h := c.mostRU; h != nil; h = h.older {
 		hKeys = append(hKeys, h.id)
 	}
 
 	tKeys := make([]string, 0)
-	for t := c.lruTail; t != nil; t = t.next {
+	for t := c.leastRU; t != nil; t = t.younger {
 		tKeys = append(tKeys, t.id)
 	}
 
