@@ -63,6 +63,8 @@ import (
 	"errors"
 )
 
+// A function that generates a fresh entry on "cache miss". See the OnMiss
+// method.
 type OnMissHandler func(string) (Cacheable, error)
 
 type Cache struct {
@@ -347,12 +349,24 @@ func (c *Cache) Close() error {
 	return nil
 }
 
-// Used to populate the cache if an entry is not found. If result is not nil,
-// it is stored in cache and returned from Get. Call with f is nil to clear. If
-// the function returns a non-nil error, that error is directly returned from
-// the Get() call that caused it to be invoked. Note that it is legal to return
-// (nil, nil): that just means the specific key could not be found. It will be
-// treated as a Get() to an unknown key without an OnMiss handler set.
+// Used to populate the cache if an entry is not found.  Say you're looking
+// for entry "bob". But there is no such entry in your cache! Do you always
+// handle that in the same way? Get "bob" from disk or S3? Then this function
+// is for you! Make this your "persistent storage lookup" function, hook it up
+// to your cache right here and it will be called automatically next time
+// you're looking for bob. The advantage is that you can expect Get() calls to
+// resolve.
+// 
+// If the function return value is not nil, it is stored in cache and returned
+// from Get.
+//
+// Call with f is nil to clear.
+//
+// If the function returns a non-nil error, that error is directly returned
+// from the Get() call that caused it to be invoked.
+//
+// Return (nil, nil) to indicate the specific key could not be found. It will
+// be treated as a Get() to an unknown key without an OnMiss handler set.
 func (c *Cache) OnMiss(f OnMissHandler) {
 	c.opChan <- reqOnMissFunc(f)
 }
@@ -364,6 +378,11 @@ func (c *Cache) OnMiss(f OnMissHandler) {
 // want to allow in cache. To remove the limit altogether set a maximum size of
 // 0. No elements will be purged with reason CACHEFULL until the next call to
 // MaxSize.
+//
+// (reading this back I have to admit, once again, that I was wrong. obviously,
+// if you're gonna be returning 1 from Size() might as well not specify the
+// method at all because 1 is the default size assumed for objects that don't
+// have a Size() method. but it explains the idea nicely so I'll leave it in.)
 func (c *Cache) MaxSize(i int64) {
 	c.opChan <- reqMaxSize(i)
 }
