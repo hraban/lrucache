@@ -1,4 +1,4 @@
-// Copyright © 2012, 2013 Hraban Luyat <hraban@0brg.net>
+// Copyright © 2012, 2013 Lrucache contributors, see AUTHORS file
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
