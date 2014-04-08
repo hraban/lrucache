@@ -61,6 +61,7 @@ package lrucache
 
 import (
 	"errors"
+	"runtime"
 )
 
 // A function that generates a fresh entry on "cache miss". See the OnMiss
@@ -132,7 +133,16 @@ type NotifyPurge interface {
 }
 
 // Requests that are passed to the cache managing goroutine
-type operation interface{}
+type operation struct {
+	// Cache is explicitly passed with every request so the main loop does not
+	// need to keep a reference to the cache around. This allows garbage
+	// collection to kick in (and eventually end the main loop through a
+	// finalizer) when the last external reference to the cache goes out of
+	// scope.
+	c *Cache
+	// any of the types defined below starting with req...
+	req interface{}
+}
 
 type reqSet struct {
 	id      string
@@ -302,32 +312,41 @@ func directGet(c *Cache, req reqGet) {
 	return
 }
 
+// split off into separate function to ensure c goes out of scope
+func mainLoopBody(op operation) {
+	c := op.c // careful: don't keep this one around!
+	switch req := op.req.(type) {
+	case reqSet:
+		directSet(c, req)
+	case reqDelete:
+		directDelete(c, req)
+	case reqGet:
+		directGet(c, req)
+	case reqOnMissFunc:
+		c.onMiss = OnMissHandler(req)
+	case reqMaxSize:
+		c.maxSize = int64(req)
+		trimCache(c)
+	case reqGetSize:
+		req <- c.size
+		close(req)
+	default:
+		panic("Illegal cache operation")
+	}
+}
+
+// does not keep any reference to the cache so it can be garbage collected
+func mainLoop(opchan <-chan operation) {
+	for op := range opchan {
+		mainLoopBody(op)
+	}
+}
+
 func (c *Cache) Init(maxsize int64) {
 	c.maxSize = maxsize
 	c.opChan = make(chan operation)
 	c.entries = map[string]*cacheEntry{}
-	go func() {
-		for op := range c.opChan {
-			switch req := op.(type) {
-			case reqSet:
-				directSet(c, req)
-			case reqDelete:
-				directDelete(c, req)
-			case reqGet:
-				directGet(c, req)
-			case reqOnMissFunc:
-				c.onMiss = OnMissHandler(req)
-			case reqMaxSize:
-				c.maxSize = int64(req)
-				trimCache(c)
-			case reqGetSize:
-				req <- c.size
-				close(req)
-			default:
-				panic("Illegal cache operation")
-			}
-		}
-	}()
+	go mainLoop(c.opChan)
 	return
 }
 
@@ -336,7 +355,7 @@ func (c *Cache) Set(id string, p Cacheable) {
 	if p == nil {
 		panic("Cacheable value must not be nil")
 	}
-	c.opChan <- reqSet{payload: p, id: id}
+	c.opChan <- operation{c, reqSet{payload: p, id: id}}
 	return
 }
 
@@ -345,17 +364,19 @@ var ErrNotFound = errors.New("Key not found in cache")
 func (c *Cache) Get(id string) (Cacheable, error) {
 	replychan := make(chan replyGet)
 	req := reqGet{id: id, reply: replychan}
-	c.opChan <- req
+	c.opChan <- operation{c, req}
 	reply := <-replychan
 	return reply.val, reply.err
 }
 
 func (c *Cache) Delete(id string) {
-	c.opChan <- reqDelete(id)
+	c.opChan <- operation{c, reqDelete(id)}
 }
 
+// OBSOLETE! The goroutine running the main loop is released when the object is
+// garbage collected. A call to Close will always return nil, for now. Hopefully
+// this will at some point return an error indicating it's obsolete.
 func (c *Cache) Close() error {
-	close(c.opChan)
 	return nil
 }
 
@@ -366,7 +387,7 @@ func (c *Cache) Close() error {
 // to your cache right here and it will be called automatically next time
 // you're looking for bob. The advantage is that you can expect Get() calls to
 // resolve.
-// 
+//
 // If the function return value is not nil, it is stored in cache and returned
 // from Get.
 //
@@ -378,7 +399,7 @@ func (c *Cache) Close() error {
 // Return (nil, nil) to indicate the specific key could not be found. It will
 // be treated as a Get() to an unknown key without an OnMiss handler set.
 func (c *Cache) OnMiss(f OnMissHandler) {
-	c.opChan <- reqOnMissFunc(f)
+	c.opChan <- operation{c, reqOnMissFunc(f)}
 }
 
 // Feel free to change this whenever. The units are not bytes but just whatever
@@ -394,20 +415,24 @@ func (c *Cache) OnMiss(f OnMissHandler) {
 // method at all because 1 is the default size assumed for objects that don't
 // have a Size() method. but it explains the idea nicely so I'll leave it in.)
 func (c *Cache) MaxSize(i int64) {
-	c.opChan <- reqMaxSize(i)
+	c.opChan <- operation{c, reqMaxSize(i)}
 }
 
 func (c *Cache) Size() int64 {
 	reply := make(chan int64)
-	c.opChan <- reqGetSize(reply)
+	c.opChan <- operation{c, reqGetSize(reply)}
 	return <-reply
 }
 
 // Create and initialize a new cache, ready for use.
 func New(maxsize int64) *Cache {
-	var c Cache
+	var mem Cache
+	c := &mem
 	c.Init(maxsize)
-	return &c
+	runtime.SetFinalizer(c, func(c *Cache) {
+		close(c.opChan)
+	})
+	return c
 }
 
 // Shared cache for configuration-less use

@@ -23,9 +23,11 @@ package lrucache
 import (
 	"errors"
 	"math/rand"
+	"runtime"
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 )
 
 type varsize int
@@ -54,7 +56,6 @@ func syncCache(c *Cache) {
 
 func TestOnPurge_1(t *testing.T) {
 	c := New(1)
-	defer c.Close()
 	var x, y purgeable
 	c.Set("x", &x)
 	c.Set("y", &y)
@@ -71,7 +72,6 @@ func TestOnPurge_1(t *testing.T) {
 
 func TestOnPurge_2(t *testing.T) {
 	c := New(1)
-	defer c.Close()
 	var x purgeable
 	c.Set("x", &x)
 	c.Delete("x")
@@ -89,7 +89,6 @@ func TestOnPurge_2(t *testing.T) {
 // Just test filling a cache with a type that does not implement NotifyPurge
 func TestsafeOnPurge(t *testing.T) {
 	c := New(1)
-	defer c.Close()
 	i := varsize(1)
 	j := varsize(1)
 	c.Set("i", i)
@@ -101,7 +100,6 @@ func TestsafeOnPurge(t *testing.T) {
 
 func TestSize(t *testing.T) {
 	c := New(100)
-	defer c.Close()
 	// sum(0..14) = 105
 	for i := 1; i < 15; i++ {
 		c.Set(strconv.Itoa(i), varsize(i))
@@ -127,7 +125,6 @@ func TestSize(t *testing.T) {
 
 func TestOnMiss(t *testing.T) {
 	c := New(10)
-	defer c.Close()
 	// Expected cache misses (arbitrary value)
 	misses := map[string]int{}
 	for i := 5; i < 10; i++ {
@@ -171,7 +168,6 @@ func TestOnMiss(t *testing.T) {
 
 func TestConcurrentOnMiss(t *testing.T) {
 	c := New(10)
-	defer c.Close()
 	ch := make(chan int)
 	// If key foo is requested but not cached, read it from the channel
 	c.OnMiss(func(id string) (Cacheable, error) {
@@ -205,7 +201,6 @@ func TestConcurrentOnMiss(t *testing.T) {
 
 func TestZeroSize(t *testing.T) {
 	c := New(2)
-	defer c.Close()
 	c.Set("a", varsize(0))
 	c.Set("b", varsize(1))
 	c.Set("c", varsize(2))
@@ -248,11 +243,40 @@ func verifyIntegrity(t *testing.T, c *Cache) {
 	}
 }
 
+// create some channels and let them go out of scope
+func leakingGoroutinesHelper() {
+	c := New(100)
+	c.Set("foo", 123)
+	// keep it around!
+	//time.AfterFunc(10*time.Second, func() { _ = c })
+}
+
+func TestLeakingGoroutines(t *testing.T) {
+	n := runtime.NumGoroutine()
+	for i := 0; i < 100; i++ {
+		leakingGoroutinesHelper()
+	}
+	// seduce the garbage collector
+	time.Sleep(time.Second)
+	runtime.GC()
+	runtime.Gosched()
+	time.Sleep(time.Second)
+	n2 := runtime.NumGoroutine()
+	leak := n2 - n
+	// TODO: Why is this 1 no matter how many caches are created and cleaned up?
+	// To see what I mean run this test in isolation (go test -run TestLeak);
+	// leak will always be exactly 1.  When run alongside other tests their
+	// garbage is also cleaned up here so leak can be less than 0---that's okay.
+	if leak > 1 { // I'd like to test >0 here :(
+		t.Error("leaking goroutines:", leak)
+		//panic("dumping goroutine stacks")
+	}
+}
+
 func benchmarkGet(b *testing.B, conc int) {
 	b.StopTimer()
 	// Size doesn't matter (that's what she said)
 	c := New(1000)
-	defer c.Close()
 	c.Set("x", 1)
 	syncCache(c)
 	var wg sync.WaitGroup
@@ -274,7 +298,6 @@ func benchmarkSet(b *testing.B, conc int) {
 	b.StopTimer()
 	// Size matters.
 	c := New(int64(b.N) / 4)
-	defer c.Close()
 	syncCache(c)
 	var wg sync.WaitGroup
 	wg.Add(conc)
@@ -295,7 +318,6 @@ func benchmarkAll(b *testing.B, conc int) {
 	b.StopTimer()
 	// Size is definitely important, but what is the right size?
 	c := New(int64(b.N) / 4)
-	defer c.Close()
 	syncCache(c)
 	var wg sync.WaitGroup
 	wg.Add(conc)
