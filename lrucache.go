@@ -392,9 +392,12 @@ func (c *Cache) Close() error {
 // you're looking for bob. The advantage is that you can expect Get() calls to
 // resolve.
 //
+// The Get() call invoking this OnMiss will always return whatever value is
+// returned from the OnMiss handler, error or not.
+//
 // If the function returns a non-nil error, that error is directly returned
 // from the Get() call that caused it to be invoked.  Otherwise, if the function
-// return value is not nil, it is stored in cache and returned from Get.
+// return value is not nil, it is stored in cache.
 //
 // Call with f is nil to clear.
 //
