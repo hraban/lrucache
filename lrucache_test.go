@@ -169,7 +169,52 @@ func TestOnMiss(t *testing.T) {
 	verifyIntegrity(t, c)
 }
 
-func TestConcurrentOnMiss(t *testing.T) {
+func TestOnMissDuplicate(t *testing.T) {
+	c := New(10)
+	defer c.Close()
+	onmisscount := 0
+	c.OnMiss(func(id string) (Cacheable, error) {
+		onmisscount += 1
+		return onmisscount, nil
+	})
+	c.Get("key")
+	c.Get("key")
+	c.Get("key")
+	c.Get("key")
+	c.Get("key")
+	o, _ := c.Get("key")
+	count := o.(int)
+	if count != 1 {
+		t.Error("OnMiss handler was not called exactly once:", count)
+	}
+}
+
+func TestOnMissError(t *testing.T) {
+	c := New(10)
+	defer c.Close()
+	myerr := errors.New("some error")
+	onmisscount := 0
+	c.OnMiss(func(id string) (Cacheable, error) {
+		onmisscount += 1
+		return onmisscount, myerr
+	})
+	c.Get("key")
+	c.Get("key")
+	c.Get("key")
+	o, err := c.Get("key")
+	if err != myerr {
+		t.Error("Unexpected error from OnMiss through Get:", err)
+	}
+	count, ok := o.(int)
+	if !ok {
+		t.Fatal("Value not returned from Get when OnMiss returns error")
+	}
+	if count != 4 {
+		t.Error("OnMiss handler was not called repeatedly on error:", count)
+	}
+}
+
+func TestOnMissConcurrent(t *testing.T) {
 	c := New(10)
 	defer c.Close()
 	ch := make(chan int)

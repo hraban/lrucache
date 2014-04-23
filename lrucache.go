@@ -261,12 +261,16 @@ func directDelete(c *Cache, req reqDelete) {
 // Handle a cache miss from outside the main goroutine
 func handleCacheMiss(c *Cache, req reqGet) {
 	var val Cacheable
-	var err error
+	var err error = ErrNotFound
 	if c.onMiss != nil {
 		val, err = c.onMiss(req.id)
-	}
-	if val == nil && err == nil {
-		err = ErrNotFound
+		if err == nil {
+			if val != nil {
+				c.Set(req.id, val)
+			} else {
+				err = ErrNotFound
+			}
+		}
 	}
 	req.reply <- replyGet{val, err}
 	close(req.reply)
@@ -366,17 +370,21 @@ func (c *Cache) Close() error {
 // to your cache right here and it will be called automatically next time
 // you're looking for bob. The advantage is that you can expect Get() calls to
 // resolve.
-// 
-// If the function return value is not nil, it is stored in cache and returned
-// from Get.
+//
+// If the function returns a non-nil error, that error is directly returned
+// from the Get() call that caused it to be invoked.  Otherwise, if the function
+// return value is not nil, it is stored in cache and returned from Get.
 //
 // Call with f is nil to clear.
 //
-// If the function returns a non-nil error, that error is directly returned
-// from the Get() call that caused it to be invoked.
-//
 // Return (nil, nil) to indicate the specific key could not be found. It will
 // be treated as a Get() to an unknown key without an OnMiss handler set.
+//
+// Called from a separate goroutine, which does not block other operations on
+// the cache. This means that calling Get concurrently with the same key, before
+// the first OnMiss call returns, will invoke another OnMiss call; the last one
+// to return will have its value stored in the cache. To avoid this, wrap the
+// OnMiss handler in a NoConcurrentDupes.
 func (c *Cache) OnMiss(f OnMissHandler) {
 	c.opChan <- reqOnMissFunc(f)
 }
