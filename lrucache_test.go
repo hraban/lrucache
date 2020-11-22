@@ -198,35 +198,92 @@ func TestOnMissError(t *testing.T) {
 	}
 }
 
-func TestOnMissConcurrent(t *testing.T) {
+// Test that a long running OnMiss doesn't block other Set calls
+func TestOnMissConcurrentGetSet(t *testing.T) {
 	c := New(10)
 	defer c.Close()
-	ch := make(chan int)
+	ch := make(chan string)
+	var outer sync.WaitGroup
 	// If key foo is requested but not cached, read it from the channel
 	c.OnMiss(func(id string) (Cacheable, error) {
 		if id == "foo" {
 			// Indicate that we want a value
-			ch <- 0
-			return <-ch, nil
+			ch <- ""
+			id = <-ch
 		}
-		return nil, nil
+		return id, nil
 	})
+	outer.Add(1)
 	go func() {
-		c.Get("foo")
+		result, err := c.Get("foo")
+		if err != nil {
+			t.Errorf(`First Get("foo") error: %v`, err)
+		}
+		if result != "outside" {
+			t.Errorf(`First Get("foo") expected "outside", got: %v`, result)
+		}
+		outer.Done()
 	}()
 	<-ch
 	// Now we know for sure: a goroutine is blocking on c.Get("foo").
 	// But other cache operations should be unaffected:
-	c.Set("bar", 10)
+	c.Set("bar", "quux")
 	// Unlock that poor blocked goroutine
-	ch <- 3
-	go func() { <-ch; ch <- 10 }()
+	ch <- "outside"
+	outer.Wait()
 	result, err := c.Get("foo")
 	switch {
 	case err != nil:
-		t.Error(`Error while fetching "foo":`, err)
-	case result != 10:
-		t.Error("Expected 10, got:", result)
+		t.Fatalf(`Second Get("foo") error: %v`, err)
+	case result != "outside":
+		t.Fatalf(`Second Get("foo") expected "outside", got: %v`, result)
+	}
+
+	checkDLL(t, c)
+}
+
+// Test that a long blocking OnMiss handler doesn't block other Gets.
+func TestOnMissConcurrentGetGet(t *testing.T) {
+	c := New(10)
+	onMissSync := make(chan string)
+	var outer sync.WaitGroup
+	c.OnMiss(func(id string) (Cacheable, error) {
+		if id == "foo" {
+			// Indicate that we want a value
+			onMissSync <- ""
+			id = <-onMissSync
+		}
+		return id, nil
+	})
+	outer.Add(1)
+	go func() {
+		result, err := c.Get("foo")
+		if err != nil {
+			t.Errorf(`First Get("foo") error: %v`, err)
+		}
+		if result != "outside" {
+			t.Errorf(`First Get("foo") expected "outside", got: %v`, result)
+		}
+		outer.Done()
+	}()
+	<-onMissSync
+	// The first (outer) Get("foo") call should be blocked now
+	result, err := c.Get("bar")
+	if err != nil {
+		t.Fatalf(`Inner Get("bar") error: %v`, err)
+	}
+	if result != "bar" {
+		t.Fatalf(`Inner Get("bar") expected "bar", got: %v`, result)
+	}
+	// The second (inner) Get call is done, go back to the outer
+	onMissSync <- "outside"
+	outer.Wait()
+	result, err = c.Get("foo")
+	if err != nil {
+		t.Fatalf(`Second Get("foo") error: %v`, err)
+	}
+	if result != "outside" {
+		t.Fatalf(`Second Get("foo") expected "outside", got: %v`, result)
 	}
 
 	checkDLL(t, c)
