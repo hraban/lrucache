@@ -8,6 +8,24 @@ import (
 	"errors"
 )
 
+// reqGet contains a single request for a key to a worker routine
+type reqGet struct {
+	id string
+	// If the key is found the value is pushed down this channel after which it
+	// is closed immediately. If the value is not found, OnMiss is called. If
+	// that does not work (OnMiss is not defined, or it returns nil) the
+	// error is set to ErrNotFound. Otherwise the result is set to whatever
+	// OnMiss returned. One way or another, exactly one value is pushed down
+	// this channel, after which it is closed.
+	reply chan<- replyGet
+}
+
+// replyGet contains all data to reply to a Get request
+type replyGet struct {
+	val Cacheable
+	err error
+}
+
 // Process operations concurrently except for those with an identical key.
 func nocondupesMainloop(f OnMissHandler, opchan chan reqGet) {
 	// Push result of call to wrapped function down this channel
@@ -99,11 +117,11 @@ func NoConcurrentDupes(f OnMissHandler) (OnMissHandler, chan<- bool) {
 // Wrapper function that limits the number of concurrent calls to f. Intended
 // for wrapping OnMiss handlers.
 func ThrottleConcurrency(f OnMissHandler, maxconcurrent uint) OnMissHandler {
-	block := make(chan int, maxconcurrent)
+	block := make(chan struct{}, maxconcurrent)
 	return func(key string) (Cacheable, error) {
-		block <- 58008
+		block <- struct{}{}
+		defer func() { <-block }()
 		res, err := f(key)
-		<-block
 		return res, err
 	}
 }

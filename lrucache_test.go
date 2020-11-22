@@ -40,7 +40,6 @@ func syncCache(c *Cache) {
 
 func TestOnPurge_1(t *testing.T) {
 	c := New(1)
-	defer c.Close()
 	var x, y purgeable
 	c.Set("x", &x)
 	c.Set("y", &y)
@@ -57,7 +56,6 @@ func TestOnPurge_1(t *testing.T) {
 
 func TestOnPurge_2(t *testing.T) {
 	c := New(1)
-	defer c.Close()
 	var x purgeable
 	c.Set("x", &x)
 	c.Delete("x")
