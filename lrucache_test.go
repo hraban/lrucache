@@ -52,7 +52,7 @@ func TestOnPurge_1(t *testing.T) {
 		t.Error("Element should have been purged but was deleted")
 	}
 
-	verifyIntegrity(t, c)
+	checkDLL(t, c)
 }
 
 func TestOnPurge_2(t *testing.T) {
@@ -69,7 +69,7 @@ func TestOnPurge_2(t *testing.T) {
 		t.Error("Element should have been deleted but was purged")
 	}
 
-	verifyIntegrity(t, c)
+	checkDLL(t, c)
 }
 
 // Just test filling a cache with a type that does not implement NotifyPurge
@@ -82,7 +82,7 @@ func TestsafeOnPurge(t *testing.T) {
 	c.Set("j", j)
 	syncCache(c)
 
-	verifyIntegrity(t, c)
+	checkDLL(t, c)
 }
 
 func TestSize(t *testing.T) {
@@ -108,7 +108,7 @@ func TestSize(t *testing.T) {
 		}
 	}
 
-	verifyIntegrity(t, c)
+	checkDLL(t, c)
 }
 
 func TestOnMiss(t *testing.T) {
@@ -152,7 +152,7 @@ func TestOnMiss(t *testing.T) {
 		t.Errorf("Expected %s to miss", k)
 	}
 
-	verifyIntegrity(t, c)
+	checkDLL(t, c)
 }
 
 func TestOnMissDuplicate(t *testing.T) {
@@ -231,7 +231,7 @@ func TestOnMissConcurrent(t *testing.T) {
 		t.Error("Expected 10, got:", result)
 	}
 
-	verifyIntegrity(t, c)
+	checkDLL(t, c)
 }
 
 func TestZeroSize(t *testing.T) {
@@ -252,29 +252,22 @@ func TestZeroSize(t *testing.T) {
 		t.Error("Failed to cache `d' after removing empty element")
 	}
 
-	verifyIntegrity(t, c)
+	checkDLL(t, c)
 }
 
-func verifyIntegrity(t *testing.T, c *Cache) {
-	hKeys := make([]string, 0)
-	for h := c.mostRU; h != nil; h = h.older {
-		hKeys = append(hKeys, h.id)
+func checkDLL(t *testing.T, c *Cache) {
+	if c.mostRU == nil && c.leastRU == nil {
+		return
 	}
-
-	tKeys := make([]string, 0)
-	for t := c.leastRU; t != nil; t = t.younger {
-		tKeys = append(tKeys, t.id)
+	if c.mostRU.younger != nil {
+		t.Fatal("cache inconsistent: most recently used element has a younger sibling")
 	}
-
-	if len(hKeys) != len(tKeys) {
-		t.Error("Doubly linked list inconsistent. head has " + strconv.Itoa(len(hKeys)) + " entries and tail has " + strconv.Itoa(len(tKeys)) + " entries")
+	if c.leastRU.older != nil {
+		t.Fatal("cache inconsistent: least recently used element has an older sibling")
 	}
-
-	for i := 0; i < len(hKeys); i++ {
-		j := (len(hKeys) - i) - 1
-
-		if hKeys[i] != tKeys[j] {
-			t.Error("Key mismatch; head has " + hKeys[i] + " and tail has " + tKeys[j])
+	for p := c.mostRU; p != c.leastRU; p = p.older {
+		if p.older.younger != p {
+			t.Fatalf("cache inconsistent: older-younger sibling relation violated")
 		}
 	}
 }
