@@ -1,6 +1,6 @@
-// Copyright © 2012, 2013 Lrucache contributors, see AUTHORS file
+// Copyright © Hraban Luyat <hraban@0brg.net>
 //
-// The license for this file is described in the LICENSE file.
+// License for use of this code is detailed in the LICENSE file
 
 package lrucache
 
