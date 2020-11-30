@@ -53,3 +53,5 @@ Examples and API are on godoc:
 <http://godoc.org/github.com/hraban/lrucache>
 
 The licensing terms are described in the file LICENSE.
+
+Copyright © 2012-2020 Hraban Luyat <hraban@0brg.net>
